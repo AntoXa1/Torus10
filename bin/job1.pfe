@@ -1,0 +1,15 @@
+#PBS -S /bin/csh
+
+#PBS -lselect=2:ncpus=10:mpiprocs=10:model=ivy
+
+#PBS -q devel
+
+module load comp-intel/2018.0.128 mpi-sgi/mpt
+
+cd /u/avdorodn/AthenaWind/bin
+
+
+mpiexec -np 20 ./athena -i athinput.torus10 > output 
+
+## mpiexec -np 20 ./athena -i /u/avdorodn/AthenaWind/tst/cylindrical/athinput.torus9_hydro_2D < run_input > output 
+# setenv PBS_O_WORKDIR /u/avdorodn/AthenaWind/bin/
