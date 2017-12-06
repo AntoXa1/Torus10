@@ -1,0 +1,9 @@
+# Prerequisites
+
+# Object files
+**/*.o
+**/*.obj
+*/.*
+
+**/Makedepend
+**/.DS_Store

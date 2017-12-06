@@ -1,0 +1,3 @@
+
+
+(add-to-list 'compilation-search-path "/Users/dora/WORK/ECLIPSE_SPACE/AthenaWind/src/*")
