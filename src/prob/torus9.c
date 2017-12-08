@@ -2394,28 +2394,35 @@ void Userwork_in_loop (MeshS *pM)
 
 void Userwork_after_loop(MeshS *pM)
 {
-	GridS *pG;
-	DomainS *pD;
-	int i,j,k,is,ie,js,je,ks,ke,kp,jp,ip;
-	  is = pG->is;
-	  ie = pG->ie;
-	  js = pG->js;
-	  je = pG->je;
-	  ks = pG->ks;
-	  ke = pG->ke;
+
+
+  printf("Userwork_after_loop \n")
+
+  GridS *pG;
+  DomainS *pD;
+  int i,j,k,is,ie,js,je,ks,ke,kp,jp,ip;
+  
+  is = pG->is;
+  ie = pG->ie;
+  js = pG->js;
+  je = pG->je;
+  ks = pG->ks;
+  ke = pG->ke;
+
 #ifdef XRAYS
-	  //	free some memory
-	  for (kp = ks; kp<=ke; kp++) { //z
-	    for (jp = js; jp<=je; jp++) { //t
-	      for (ip = is; ip<=ie; ip++) { //r
-	    	 free((pG->GridOfRays[kp][jp][ip]).Ray);
-	      }
-	    }
-	  }
+  //	free some memory
+  for (kp = ks; kp<=ke; kp++) { //z
+    for (jp = js; jp<=je; jp++) { //t
+      for (ip = is; ip<=ie; ip++) { //r
+	free((pG->GridOfRays[kp][jp][ip]).Ray);
+      }
+    }
+  }
 #endif
-	  //	free_3d_array(pG->xi);
+  //	free_3d_array(pG->xi);
 #ifdef MPI_PARALLEL
-	  freeGlobArrays();
+
+  freeGlobArrays();
 #endif	  
 }
 
@@ -3804,6 +3811,7 @@ static void unPackGlobBufForGlobSync(MeshS *pM, GridS *pG, int *ext_id, int W2Do
 
 void freeGlobArrays()
 {
+
   free_1d_array(recv_rq);
   free_1d_array(send_rq);
   free_2d_array(BufBndr);
@@ -3811,6 +3819,7 @@ void freeGlobArrays()
   free_1d_array(send_buf_big);
   free_1d_array(recv_buf);
   free_1d_array(recv_buf_big);    
+
 }
 
 #endif
