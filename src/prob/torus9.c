@@ -2395,35 +2395,12 @@ void Userwork_in_loop (MeshS *pM)
 void Userwork_after_loop(MeshS *pM)
 {
 
+  GridS *pG=pM->Domain[0][0].Grid;
 
-  printf("Userwork_after_loop \n")
-
-  GridS *pG;
-  DomainS *pD;
-  int i,j,k,is,ie,js,je,ks,ke,kp,jp,ip;
+  printf("Userwork_after_loop \n");
   
-  is = pG->is;
-  ie = pG->ie;
-  js = pG->js;
-  je = pG->je;
-  ks = pG->ks;
-  ke = pG->ke;
-
-#ifdef XRAYS
-  //	free some memory
-  for (kp = ks; kp<=ke; kp++) { //z
-    for (jp = js; jp<=je; jp++) { //t
-      for (ip = is; ip<=ie; ip++) { //r
-	free((pG->GridOfRays[kp][jp][ip]).Ray);
-      }
-    }
-  }
-#endif
-  //	free_3d_array(pG->xi);
-#ifdef MPI_PARALLEL
-
-  freeGlobArrays();
-#endif	  
+  free_3d_array(pG);
+	  
 }
 
 #define MAXIT 50
@@ -3809,17 +3786,35 @@ static void unPackGlobBufForGlobSync(MeshS *pM, GridS *pG, int *ext_id, int W2Do
 }
 
 
-void freeGlobArrays()
+void freeGlobArrays(GridS *pG )
 {
+#ifdef XRAYS
+  free_3d_array(pG->GridOfRays);
+  free_3d_array(pG->xi);
+  free_3d_array(pG->tau_e);
+  free_3d_array(pG->disp);
+  free_3d_array(pG->yglob);
+#endif
 
+#ifdef MPI_PARALLEL
   free_1d_array(recv_rq);
+  /* printf(" 1 \n"); */
+
+
   free_1d_array(send_rq);
+  /* printf(" 2 \n"); */
+
   free_2d_array(BufBndr);
+  /* printf(" 3 \n"); */
+
   free_1d_array(send_buf);
+  /* printf(" 4 \n"); */
+
   free_1d_array(send_buf_big);
   free_1d_array(recv_buf);
   free_1d_array(recv_buf_big);    
 
+#endif
 }
 
 #endif
