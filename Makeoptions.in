@@ -109,15 +109,24 @@ ifeq ($(MACHINE),atorusmpi)
   MPIINC = -I/local/data/atorus1/dora/Compilers/openmpi/include
   MPILIB = -L/local/data/atorus1/dora/Compilers/openmpi/lib -lmpi
 else
+ifeq ($(MACHINE),atorus_super_mpi)
+  CC  = icc
+  LDR = icc
+  OPT = -O3 -w -std=c99
+#  OPT = -O0 -g -w -std=c99
+  MPILIB= -lmpi
+  MPIINC = -I/nasa/sgi/mpt/2.15r20/include
+else
 ifeq ($(MACHINE),macosx)
   CC = gcc
   LDR = gcc
-  OPT = -O0 -g -w
-#  OPT = -O3
+#  OPT = -O0 -g -w
+  OPT = -O3 -w
   # FFTWLIB = -L/opt/local/lib -lfftw3
   # FFTWINC = -I/opt/local/include
 else
 abort:	Unsupported MACHINE=$(MACHINE)
+endif
 endif
 endif
 endif
