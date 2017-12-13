@@ -271,13 +271,13 @@ typedef struct GridOvrlp_s{
 typedef struct CellIndexAndCoords{
 //	cell data, used in ...
 	int i, j, k; //current index
-	Real x123[3]; //coordinates
+	float x123[3]; //coordinates
 }CellIndexAndCoords;
 
 typedef struct CellOnRayData{
 //	cell data along the trajectory
 	int i, j, k; //current index of cell along the ray
-	Real dl; //length element
+	float dl; //length element
 }CellOnRayData;
 
 typedef struct RayData{
@@ -289,8 +289,8 @@ typedef struct RayData{
 
 typedef struct ArrayGlob{
   /* array on global mesh updated on a local node */
-  Real ro;
-  Real tau;
+  float ro;
+  float tau;
 }ArrayGlob;
   
 
