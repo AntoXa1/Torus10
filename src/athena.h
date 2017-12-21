@@ -268,6 +268,12 @@ typedef struct GridOvrlp_s{
 
 #ifdef XRAYS
 
+/* the size of the global grid, from which to interpolate */	      
+///* possibly safely remove this const int nglob1 = 20, nglob2=20, nglob3=20; */
+
+
+#define mfix1
+
 typedef struct CellIndexAndCoords{
 //	cell data, used in ...
 	int i, j, k; //current index
@@ -276,22 +282,29 @@ typedef struct CellIndexAndCoords{
 
 typedef struct CellOnRayData{
 //	cell data along the trajectory
-	int i, j, k; //current index of cell along the ray
-	Real dl; //length element
+  //current index of cell along the ray, phi index is the same
+
+                    //if the source is symmetrical
+  short i,j,k;
+  
+  
+  float dl; //length element
+  
 }CellOnRayData;
 
 typedef struct RayData{
 //	data along the trajectory
 	short len;
 	CellOnRayData  *Ray;
-
 }RayData;
 
-typedef struct ArrayGlob{
-  /* array on global mesh updated on a local node */
-  Real ro;
-  Real tau;
-}ArrayGlob;
+int yglob_sz[3];
+
+typedef struct LocDatStructForRay{
+  /* Array on global mesh updated on a local node */
+  float ro;
+  float tau;
+}LocDatStructForRay;
   
 
 
@@ -372,12 +385,11 @@ typedef struct Grid_s{
 #ifdef XRAYS
   Real ***xi ;	   // ionization parameter
   Real ***tau_e; //optical depth
-  Real ***disp; //displacement
-
-ArrayGlob ***yglob; //density on the global mesh
+  //a  Real ***disp; //displacement
 
 
-RayData ***GridOfRays;
+  LocDatStructForRay ***yglob; //density on the global mesh
+  RayData **GridOfRays; //geometrical information in {R,z}
 
   
   
@@ -575,6 +587,10 @@ typedef Real (*CoolingFun_t)(const Real E, const Real d,
 			     const Real B1,const Real B2,const Real B3,
 			     const Real xi, const Real dt,
 			     int i, int j, int k);
+
+typedef Real (*RadiationPres_t) (ConsS ***U, const Real xi, const Real dt,
+			     int i, int j, int k); 
+
 #else
 	typedef Real (*CoolingFun_t)(const Real d, const Real p, const Real dt);
 #endif
