@@ -2381,29 +2381,47 @@ void Userwork_in_loop (MeshS *pM)
 
 void Userwork_after_loop(MeshS *pM)
 {
-	GridS *pG;
-	DomainS *pD;
-	int i,j,k,is,ie,js,je,ks,ke,kp,jp,ip;
-	  is = pG->is;
-	  ie = pG->ie;
-	  js = pG->js;
-	  je = pG->je;
-	  ks = pG->ks;
-	  ke = pG->ke;
+
+  int i,j,k,is,ie,js,je,ks,ke,kp,jp,ip;
+
+  GridS *pG = pM->Domain[0][0].Grid;
+
+  //DomainS pD = pM->Domain[0][0];
+	
+	
+  /* is = pG->is; */
+  /* ie = pG->ie; */
+  /* js = pG->js; */
+  /* je = pG->je; */
+  /* ks = pG->ks; */
+  /* ke = pG->ke; */
+
+  is = 0;
+  ie = pM->Nx[0]-1;
+  js = 0;
+  je = pM->Nx[1]-1;       
+  ks = 0;
+  ke = pM->Nx[2]-1;
+	  
 #ifdef XRAYS
-	  //	free some memory
-	  for (kp = ks; kp<=ke; kp++) { //z
-	    for (jp = js; jp<=je; jp++) { //t
-	      for (ip = is; ip<=ie; ip++) { //r
-	    	 free((pG->GridOfRays[kp][ip]).Ray);
-	      }
-	    }
-	  }
+  /* free some memory */
+  for (kp = ks; kp<=ke; kp++) { //z
+    //  for (jp = js; jp<=je; jp++) { //t
+    for (ip = is; ip<=ie; ip++) { //r
+      free((pG->GridOfRays[kp][ip]).Ray);
+    }
+  }
+	  
 #endif
-	  //	free_3d_array(pG->xi);
+
 #ifdef MPI_PARALLEL
-	  freeGlobArrays();
-#endif	  
+	  
+  freeGlobArrays();
+	  	  
+#endif
+
+
+		  
 }
 
 #define MAXIT 50
