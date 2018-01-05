@@ -277,7 +277,7 @@ typedef struct GridOvrlp_s{
 typedef struct CellIndexAndCoords{
 //	cell data, used in ...
 	int i, j, k; //current index
-	Real x123[3]; //coordinates
+	float x123[3]; //coordinates
 }CellIndexAndCoords;
 
 typedef struct CellOnRayData{
@@ -298,6 +298,7 @@ typedef struct RayData{
 	CellOnRayData  *Ray;
 }RayData;
 
+<<<<<<< HEAD
 int yglob_sz[3];
 
 typedef struct LocDatStructForRay{
@@ -305,8 +306,6 @@ typedef struct LocDatStructForRay{
   float ro;
   float tau;
 }LocDatStructForRay;
-  
-
 
 #endif //XRAYS
 

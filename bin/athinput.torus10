@@ -18,6 +18,7 @@ tlim            = 0.01        # time limit
 
 <domain1>
 level           = 0            # refinement level this Domain (root=0)
+
 Nx1             = 400           # Number of zones in X-direction
 x1min           = 0.1          # minimum value of X1 (radial coord)
 x1max           = 5.           # maximum value of X1 (radial coord)
