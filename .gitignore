@@ -12,6 +12,7 @@
 
 /bin/id[0-9]
 /bin/*put
+bin/athena
 
 
 **/Makeoptions
