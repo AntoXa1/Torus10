@@ -21,8 +21,7 @@
 
 /* Version identifier when configure was last run */
 
-#define CONFIGURE_DATE "Wed Dec 13 16:47:11 EST 2017"
-
+#define CONFIGURE_DATE "Wed Mar 14 10:58:39 EDT 2018"
 
 /* Problem generator with which Athena is compiled */
 #define A_PROBLEM "torus10"

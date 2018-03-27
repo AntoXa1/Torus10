@@ -74,7 +74,7 @@ print binDir
 for file in os.listdir(binDir):    
     
     if file.startswith("mhdXwind"):                                
-        print("file = ", file)        
+        Print("file = ", file)        
         try:
             print("dirToSave", dirToSave+file, os.path.isdir(dirToSave) )
             shutil.move(binDir+'/'+file, dirToSave+file)

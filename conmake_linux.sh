@@ -9,7 +9,9 @@ make all clean
 --with-order=2p --enable-mpi --with-integrator=vl \
 --enable-fofc
 
-make all MACHINE=macosxmpi
+make all MACHINE=atorusmpi
+
+# make all MACHINE=macosxmpi
 
 
 

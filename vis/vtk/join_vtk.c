@@ -111,10 +111,12 @@ int main(int argc, char* argv[]){
     }
     else{
       if((domain_1d[n].fname = my_strdup(argv[i])) == NULL){
-	join_error("domain_1d[%d].fname = my_strdup(\"%s\") failed\n",
+	      join_error("domain_1d[%d].fname = my_strdup(\"%s\") failed\n",
 		   n,argv[i]);
       }
-      /* printf("domain_1d[%d].fname = \"%s\"\n",n,domain_1d[n].fname); */
+        
+        // printf("domain_1d[%d].fname = \"%s\"\n",n,domain_1d[n].fname);
+
       n++; /* increment the domain counter */
     }
   }
@@ -128,6 +130,7 @@ int main(int argc, char* argv[]){
   /* Allocate the domain_3d[][][] array */
     domain_3d = (VTK_Domain***)
       calloc_3d_array(NGrid_z, NGrid_y, NGrid_x, sizeof(VTK_Domain));
+      
     if(domain_3d == NULL)
       join_error("calloc_3d_array() returned a NULL pointer\n");
 
@@ -136,7 +139,7 @@ int main(int argc, char* argv[]){
   for(k=0; k<NGrid_z; k++){
     for(j=0; j<NGrid_y; j++){
       for(i=0; i<NGrid_x; i++){
-	domain_3d[k][j][i] = domain_1d[n++];
+	      domain_3d[k][j][i] = domain_1d[n++];
       }
     }
   }
@@ -281,19 +284,26 @@ static void init_domain_1d(void){
     /* Origin */
     fscanf(fp,"ORIGIN %le %le %le\n",
 	   &(domain_1d[i].ox), &(domain_1d[i].oy), &(domain_1d[i].oz));
+
     printf("ORIGIN %e %e %e\n",
 	   domain_1d[i].ox, domain_1d[i].oy, domain_1d[i].oz);
 
     /* Spacing, dx, dy, dz */
     fscanf(fp,"SPACING %le %le %le\n",
 	   &(domain_1d[i].dx), &(domain_1d[i].dy), &(domain_1d[i].dz));
+
     printf("SPACING %e %e %e\n",
 	   domain_1d[i].dx, domain_1d[i].dy, domain_1d[i].dz);
 
     /* Cell Data = Nx*Ny*Nz */
     fscanf(fp,"CELL_DATA %d\n",&cell_dat);
     printf("CELL_DATA %d\n",cell_dat);
+
     ndat = (domain_1d[i].Nx)*(domain_1d[i].Ny)*(domain_1d[i].Nz);
+    
+    
+
+
     if(cell_dat != ndat)
       join_error("Nx*Ny*Nz = %d\n",ndat);
 
@@ -413,42 +423,48 @@ static void sort_domain_1d(void){
 
 /* ========================================================================== */
 
-
-static void read_write_scalar(FILE *fp_out){
+static void read_write_scalar(FILE *fp_out)
+{
 
   FILE *fp;
   int i, j, k, ig, jg, kg, nread;
   float fdat;
 
-  for(kg=0; kg<NGrid_z; kg++){
-    for(jg=0; jg<NGrid_y; jg++){
-      for(ig=0; ig<NGrid_x; ig++){
-        if((domain_3d[kg][jg][ig].fp = fopen(domain_3d[kg][jg][ig].fname,"r")) == NULL)
-           join_error("Error opening file \"%s\"\n",domain_3d[kg][jg][ig].fname);
-        fseek(domain_3d[kg][jg][ig].fp,domain_3d[kg][jg][ig].pos, SEEK_SET);
+  for (kg = 0; kg < NGrid_z; kg++)
+  {
+    for (jg = 0; jg < NGrid_y; jg++)
+    {
+      for (ig = 0; ig < NGrid_x; ig++)
+      {
+        if ((domain_3d[kg][jg][ig].fp = fopen(domain_3d[kg][jg][ig].fname, "r")) == NULL)
+          join_error("Error opening file \"%s\"\n", domain_3d[kg][jg][ig].fname);
+        fseek(domain_3d[kg][jg][ig].fp, domain_3d[kg][jg][ig].pos, SEEK_SET);
       }
     }
-    for(k=0; k<domain_3d[kg][0][0].Nz; k++){
-      for(jg=0; jg<NGrid_y; jg++){
-	for(j=0; j<domain_3d[0][jg][0].Ny; j++){
-	  for(ig=0; ig<NGrid_x; ig++){
-
+    for (k = 0; k < domain_3d[kg][0][0].Nz; k++)
+    {
+      for (jg = 0; jg < NGrid_y; jg++)
+      {
+        for (j = 0; j < domain_3d[0][jg][0].Ny; j++)
+        {
+          for (ig = 0; ig < NGrid_x; ig++)
+          {
             fp = domain_3d[kg][jg][ig].fp;
-
-	    for(i=0; i<domain_3d[0][0][ig].Nx; i++){
-
-	      if((nread = fread(&fdat, sizeof(float), 1, fp)) != 1)
-		join_error("read_write_scalar error\n");
-
-	      fwrite(&fdat, sizeof(float), 1, fp_out);
-	    }
-	  }
-	}
+            for (i = 0; i < domain_3d[0][0][ig].Nx; i++)
+            {
+              if ((nread = fread(&fdat, sizeof(float), 1, fp)) != 1)
+                join_error("read_write_scalar error\n");
+              fwrite(&fdat, sizeof(float), 1, fp_out);
+            }
+          }
+        }
       }
     }
-    for(jg=0; jg<NGrid_y; jg++){
-      for(ig=0; ig<NGrid_x; ig++){
-        domain_3d[kg][jg][ig].pos=ftell(domain_3d[kg][jg][ig].fp);
+    for (jg = 0; jg < NGrid_y; jg++)
+    {
+      for (ig = 0; ig < NGrid_x; ig++)
+      {
+        domain_3d[kg][jg][ig].pos = ftell(domain_3d[kg][jg][ig].fp);
         fclose(domain_3d[kg][jg][ig].fp);
       }
     }
@@ -457,46 +473,54 @@ static void read_write_scalar(FILE *fp_out){
   return;
 }
 
-
 /* ========================================================================== */
 
-
-static void read_write_vector(FILE *fp_out){
+static void read_write_vector(FILE *fp_out)
+{
 
   FILE *fp;
   int i, j, k, ig, jg, kg, nread;
   float fvec[3];
 
-
-  for(kg=0; kg<NGrid_z; kg++){
-    for(jg=0; jg<NGrid_y; jg++){
-      for(ig=0; ig<NGrid_x; ig++){
-        if((domain_3d[kg][jg][ig].fp = fopen(domain_3d[kg][jg][ig].fname,"r")) == NULL)
-           join_error("Error opening file \"%s\"\n",domain_3d[kg][jg][ig].fname);
-        fseek(domain_3d[kg][jg][ig].fp,domain_3d[kg][jg][ig].pos, SEEK_SET);
+  for (kg = 0; kg < NGrid_z; kg++)
+  {
+    for (jg = 0; jg < NGrid_y; jg++)
+    {
+      for (ig = 0; ig < NGrid_x; ig++)
+      {
+        if ((domain_3d[kg][jg][ig].fp = fopen(domain_3d[kg][jg][ig].fname, "r")) == NULL)
+          join_error("Error opening file \"%s\"\n", domain_3d[kg][jg][ig].fname);
+        fseek(domain_3d[kg][jg][ig].fp, domain_3d[kg][jg][ig].pos, SEEK_SET);
       }
     }
-    for(k=0; k<domain_3d[kg][0][0].Nz; k++){
-      for(jg=0; jg<NGrid_y; jg++){
-	for(j=0; j<domain_3d[0][jg][0].Ny; j++){
-	  for(ig=0; ig<NGrid_x; ig++){
+    for (k = 0; k < domain_3d[kg][0][0].Nz; k++)
+    {
+      for (jg = 0; jg < NGrid_y; jg++)
+      {
+        for (j = 0; j < domain_3d[0][jg][0].Ny; j++)
+        {
+          for (ig = 0; ig < NGrid_x; ig++)
+          {
 
-	    fp = domain_3d[kg][jg][ig].fp;
+            fp = domain_3d[kg][jg][ig].fp;
 
-	    for(i=0; i<domain_3d[0][0][ig].Nx; i++){
+            for (i = 0; i < domain_3d[0][0][ig].Nx; i++)
+            {
 
-	      if((nread = fread(fvec, sizeof(float), 3, fp)) != 3)
-		join_error("read_write_vector error\n");
+              if ((nread = fread(fvec, sizeof(float), 3, fp)) != 3)
+                join_error("read_write_vector error\n");
 
-	      fwrite(fvec, sizeof(float), 3, fp_out);
-	    }
-	  }
-	}
+              fwrite(fvec, sizeof(float), 3, fp_out);
+            }
+          }
+        }
       }
     }
-    for(jg=0; jg<NGrid_y; jg++){
-      for(ig=0; ig<NGrid_x; ig++){
-        domain_3d[kg][jg][ig].pos=ftell(domain_3d[kg][jg][ig].fp);
+    for (jg = 0; jg < NGrid_y; jg++)
+    {
+      for (ig = 0; ig < NGrid_x; ig++)
+      {
+        domain_3d[kg][jg][ig].pos = ftell(domain_3d[kg][jg][ig].fp);
         fclose(domain_3d[kg][jg][ig].fp);
       }
     }
@@ -504,7 +528,6 @@ static void read_write_vector(FILE *fp_out){
 
   return;
 }
-
 
 /* ========================================================================== */
 
@@ -636,12 +659,18 @@ static void write_joined_vtk(const char *out_name){
 
     /* Now, every file should agree that we either have SCALARS or
        VECTORS data */
+    
     fprintf(fp_out,"%s %s %s\n",type,variable,format);
+    
     if(strcmp(type, "SCALARS") == 0){
+      
       fprintf(fp_out,"LOOKUP_TABLE default\n");
+
       read_write_scalar(fp_out);
     }
+    
     else if(strcmp(type, "VECTORS") == 0){
+      
       read_write_vector(fp_out);
     }
     else

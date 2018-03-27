@@ -1,5 +1,5 @@
 # Prerequisites
-
+s
 # Object files
 **/*.o
 **/*.obj
@@ -12,6 +12,7 @@
 
 /bin/id[0-9]
 /bin/*put
+bin/athena
 
 
 **/Makeoptions
@@ -20,3 +21,6 @@
 
 **/Makedepend
 **/.DS_Store
+
+.*
+!/.gitignore

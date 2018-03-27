@@ -8,7 +8,7 @@
             "request": "launch",
             "program": "${workspaceRoot}/bin/athena",
             "args": [
-                "-i, ../tst/3D-mhd/athinput.sg_strat"
+                "-i", "${workspaceRoot}/bin/athinput.torus10"
                 ],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}",
