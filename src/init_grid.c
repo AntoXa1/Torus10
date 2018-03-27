@@ -214,12 +214,16 @@ void init_grid(MeshS *pM)
 
       //a      pG->disp = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
       //a if (pG->disp == NULL) goto on_error_xrays_disp;
-            
-    
+               
       yglob_sz[0]= pM->Nx[0];     
       yglob_sz[1]= pM->Nx[1];
       yglob_sz[2]= pM->Nx[2];
-	
+
+      /* yglob_sz[0]= 50;      */
+      /* yglob_sz[1]= 50; */
+      /* yglob_sz[2]= 50]; */
+      
+
       pG->yglob = (LocDatStructForRay***)calloc_3d_array(yglob_sz[2],yglob_sz[1],yglob_sz[0],
 							 sizeof(LocDatStructForRay));
       if (pG->yglob == NULL) goto on_error_xrays_yglob;

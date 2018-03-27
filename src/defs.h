@@ -20,9 +20,7 @@
  *  (user modified via configure) */
 
 /* Version identifier when configure was last run */
-
-#define CONFIGURE_DATE "Wed Dec 13 16:47:11 EST 2017"
-
+#define CONFIGURE_DATE "Tue Mar  6 16:02:17 EST 2018"
 
 /* Problem generator with which Athena is compiled */
 #define A_PROBLEM "torus10"
@@ -95,7 +93,7 @@
 #define NO_H_CORRECTION
 
 /* FFT mode: FFT_ENABLED or NO_FFT */
-#define NO_FFT
+#define FFT_ENABLED
 
 /* shearing-box: SHEARING_BOX or NO_SHEARING_BOX */
 #define NO_SHEARING_BOX

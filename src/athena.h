@@ -275,37 +275,44 @@ typedef struct GridOvrlp_s{
 #define mfix1
 
 typedef struct CellIndexAndCoords{
-//	cell data, used in ...
+	/* cell data, used in Constr_RayCastingOnGlobGrid */
 	int i, j, k; //current index
 	float x123[3]; //coordinates
 }CellIndexAndCoords;
 
 typedef struct CellOnRayData{
-//	cell data along the trajectory
-  //current index of cell along the ray, phi index is the same
-
-                    //if the source is symmetrical
-  short i,j,k;
-  
-  
-  float dl; //length element
-  
+  /* cell data along the trajectory */
+  /* current index of cell along the ray, phi index is the same */
+  /* if the source is symmetrical */
+  short i,j,k;    
+  float dl; //length element  
 }CellOnRayData;
 
 typedef struct RayData{
 //	data along the trajectory
-	short len;
+        short len;  //index length
 	CellOnRayData  *Ray;
 }RayData;
 
-<<<<<<< HEAD
-int yglob_sz[3];
+
+int yglob_sz[3]; /* stores the size of the glob array in init_grid.c */
 
 typedef struct LocDatStructForRay{
   /* Array on global mesh updated on a local node */
   float ro;
   float tau;
 }LocDatStructForRay;
+
+/* ---------------- new course ------------- */
+
+typedef struct GridOFRaysOnGrid{
+//	data along the trajectory
+  //short len;  //index length
+  short ides, kdes;  /* destination cell indices on global index grid */
+  CellOnRayData  *Ray;  
+}GridOFRaysOnGrid;
+
+
 
 #endif //XRAYS
 
@@ -388,8 +395,10 @@ typedef struct Grid_s{
 
 
   LocDatStructForRay ***yglob; //density on the global mesh
+
   RayData **GridOfRays; //geometrical information in {R,z}
 
+  GridOFRaysOnGrid **RaysOnGrid; //geometrical information in {R,z} on a local Grid/one per MPI process
   
   
 #endif // XRAYS

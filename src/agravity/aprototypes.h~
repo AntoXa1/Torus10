@@ -1,0 +1,20 @@
+#include <stdio.h>
+#include <stdarg.h>
+
+#include "../athena.h"
+
+#include "../defs.h"
+
+#include "../config.h"
+
+void calcGravitySolverParams(MeshS *pM, GridS *pG);
+
+void testFourier( MeshS *pM, GridS *pG);
+
+void testHYPRE_1( MeshS *pM, GridS *pG);
+
+void testHYPRE_ex2(MeshS *pM, GridS *pG);
+
+void ijkGlobToLoc(const GridS *pG, const int iglob, 
+        const int jglob, const int kglob, int *iloc, int *jloc, int *kloc);
+

@@ -19,27 +19,27 @@ tlim            = 0.01        # time limit
 <domain1>
 level           = 0            # refinement level this Domain (root=0)
 
-Nx1             = 400           # Number of zones in X-direction
+Nx1             = 100           # Number of zones in X-direction
 x1min           = 0.1          # minimum value of X1 (radial coord)
 x1max           = 5.           # maximum value of X1 (radial coord)
 bc_ix1          = 2            # inner-I (R) boundary flag
 bc_ox1          = 2    	       # outer-I (R) boundary flag
 
-Nx2             = 100            # Number of zones in X2-direction
+Nx2             = 100        # Number of zones in X2-direction
 x2min           = -1.57079633     # minimum value of X2 (theta coord; radians)
 x2max           =  1.57079633   # maximum value of X2 (theta coord; radians)
 bc_ix2          = 4            # inner-J (PHI) boundary flag
 bc_ox2          = 4            # outer-J (PHI) boundary flag
 
-Nx3             = 400           # Number of zones in X3-direction
+Nx3             = 100          # Number of zones in X3-direction
 x3min           = -2.5         # minimum value of X3
 x3max           = 2.5          # maximum value of X3
 bc_ix3          = 2            # inner-K (Z) boundary flag
 bc_ox3          = 2            # outer-K (Z) boundary flag #<parallel>
 					
-NGrid_x1 = 2
-NGrid_x2 = 5
-NGrid_x3 = 1
+NGrid_x1 = 1
+NGrid_x2 = 1
+NGrid_x3 = 2
 
 <problem>
 F2Fedd = 0.1 #L/Ledd

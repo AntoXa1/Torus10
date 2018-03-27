@@ -23,6 +23,8 @@
 #include "reconstruction/prototypes.h"
 #include "rsolvers/prototypes.h"
 
+#include "agravity/aprototypes.h"
+
 /*----------------------------------------------------------------------------*/
 /* main.c */
 int athena_main(int argc, char *argv[]);

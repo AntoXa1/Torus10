@@ -100,7 +100,9 @@ ifeq ($(MACHINE),macosxmpi)
 #  OPT = -O3
   OPT = -g
   MPIINC = -I/Users/dora/Applications/LIBS/openmpi/include
-  MPILIB = -L/Users/dora/Applications/LIBS/openmpi/lib -lmpi
+  MPILIB = -L/Users/dora/Applications/LIBS/openmpi/lib -lmpi  
+  FFTWLIB = -L/Users/dora/Applications/LIBS/FFTW/lib -lfftw3 -L/Users/dora/Applications/LIBS/hypre/lib -lHYPRE
+  FFTWINC = -I/Users/dora/Applications/LIBS/FFTW/include -I/Users/dora/Applications/LIBS/hypre/include
 else
 ifeq ($(MACHINE),atorusmpi)
   CC  =/local/data/atorus1/dora/Compilers/openmpi/bin/mpicc
@@ -120,10 +122,13 @@ else
 ifeq ($(MACHINE),macosx)
   CC = gcc
   LDR = gcc
-#  OPT = -O0 -g -w
-  OPT = -O3 -w
-  # FFTWLIB = -L/opt/local/lib -lfftw3
-  # FFTWINC = -I/opt/local/include
+  OPT = -O0 -g -w  
+  FFTWLIB = -L/Users/dora/Applications/LIBS/FFTW/lib\
+   -L/Users/dora/Applications/LIBS/hypre/lib\
+   -lHYPRE\
+   -lfftw3\           
+  FFTWINC = -I/Users/dora/Applications/LIBS/FFTW/include\
+   -I/Users/dora/Applications/LIBS/hypre/include
 else
 abort:	Unsupported MACHINE=$(MACHINE)
 endif

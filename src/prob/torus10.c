@@ -9,13 +9,15 @@
 #include <stdio.h>
 
 #include <unistd.h>
-
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
 #include "defs.h"
 #include "athena.h"
 #include "globals.h"
 #include "prototypes.h"
+
 
 //****************************************
 
@@ -48,22 +50,18 @@ static void calcProblemParameters();
 static void printProblemParameters();
 
 
-void calcGravitySolverParams(MeshS *pM, GridS *pG);
-void testSelfGravFourier( MeshS *pM, GridS *pG);
 float ellf(float phi, float ak);
 float rd(float x, float y, float z);
 float rf(float x, float y, float z);  
 
 
-void Constr_optDepthStack(MeshS *pM, GridS *pG);
+// void Constr_optDepthStack(MeshS *pM, GridS *pG);
+
 void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id);
-
-void optDepthStack(MeshS *pM, GridS *pG);
+// void optDepthStack(MeshS *pM, GridS *pG);
 void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id);
-
 void ionizParam(const MeshS *pM, GridS *pG);
 void optDepthFunctions(GridS *pG);
-
 
 Real updateEnergyFromXrayHeatCool(const Real E, const Real d,
 				  const Real M1,const Real M2, const Real M3,
@@ -76,8 +74,12 @@ Real updateEnergyFromXrayHeatCool(const Real E, const Real d,
 void xRayHeatCool(const Real dens, const Real Press, const Real xi_in, Real*, Real*,
 		  const Real dt);
 
-
 Real rtsafe_energy_eq(Real, Real, Real, Real, int*);
+
+/* ============================================================================= */
+/*                       "gravity" functions                                   */
+/* ============================================================================= */
+void calcFFT();
 
 
 /* ============================================================================= */
@@ -171,13 +173,13 @@ static Real
 int ID_DEN = 0;
 int ID_TAU = 1;
 
-
+#ifdef MPI_PARALLEL
 /* MPI send and receive buffers */
 int  BufSize, BufSizeGlobArr, ibufe, jbufe, kbufe, **BufBndr, NumDomsInGlob; //sizes of global buffer 
 static double **send_buf = NULL, **recv_buf = NULL,
   **send_buf_big = NULL, **recv_buf_big = NULL;
 static MPI_Request *recv_rq, *send_rq;
-
+#endif
 
 
 
@@ -206,6 +208,9 @@ void apause(){
   getchar();
 }
 
+
+
+#ifdef MPI_PARALLEL
 
 void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
  /* by the time this function is executed, density must be synced on global grid */
@@ -274,6 +279,8 @@ void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   } //kp
 
 }
+#endif
+
 
 void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
  
@@ -333,13 +340,17 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 
   jp = js;
 
-  
+
+while( mpi1==1 );
+
+ /* int id1,id2,id3; */
+ /* get_myGridIndex() */
+		
   for (kp = ks; kp <= ke; kp++) { //z
      for (ip = is; ip <= ie; ip++) { //r
 
       #ifndef MPI_PARALLEL /* if Not parallel */
 	ath_error("[Constr_RayCastingOnGlobGrid] is not working in parallel\n");
-	/* ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc); */
 	/* pG->yglob[kp][jp][ip].ro = pG->U[kloc][jloc][iloc].d; */
       #endif
 	  
@@ -507,8 +518,7 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 	(pG->GridOfRays[kp][ip]).len = NmaxArray;
 
 	pG->tau_e[kp][jp][ip] = 0;
-
-
+      
 	for (ii = 0; ii<NmaxArray; ii++){
 
 	  (pG->GridOfRays[kp][ip]).Ray[ii].dl= (tmpCellIndexAndDisArray[ii]).dl;
@@ -517,10 +527,6 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 	  (pG->GridOfRays[kp][ip]).Ray[ii].j=(tmpCellIndexAndDisArray[ii]).j;
 	  (pG->GridOfRays[kp][ip]).Ray[ii].k=(tmpCellIndexAndDisArray[ii]).k;
 
-	  /* (pG->GridOfRays[kp][jp][ip]).Ray[ii].dl=(tmpCellIndexAndDisArray[ii]).dl; */
-	  /* (pG->GridOfRays[kp][jp][ip]).Ray[ii].i=(tmpCellIndexAndDisArray[ii]).i; */
-	  /* (pG->GridOfRays[kp][jp][ip]).Ray[ii].j = (tmpCellIndexAndDisArray[ii]).j; */
-	  /* (pG->GridOfRays[kp][jp][ip]).Ray[ii].k = (tmpCellIndexAndDisArray[ii]).k; */
 	  
 	  //		   printf("NmaxArray= %d dl \n\n ", NmaxArray);	
 	} //over >GridOfRays = tmpCellIndexAndDisArray      				      
@@ -529,269 +535,31 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 	l=0;
 	tau=0;
 
-      } //ip
-    
+      } //ip    
   } //kp
 
 
- /* for (kp = ks; kp <= ke; kp++) { */
- /*    for (jp = js; jp <= je; jp++) { */
- /*      for (ip = is; ip <= ie; ip++){ */
-
- /* 	pG->yglob[kp][jp][ip].tau  = (float)(pG->GridOfRays[kp][ip]).len; */
-
- /* 	//	  (pG->GridOfRays[kp][ip]).Ray[ (pG->GridOfRays[kp][ip]).len -1 ].dl; */
-	  
- /*      } */
- /*    } */
- /* } */
-
- 
+    
   //printf(" ...........................\n\n");
 
 free(tmpCellIndexAndDisArray);
 
-}
+
+ /* for (kp=pG->ks; kp<=pG->ke; kp++){      */
+ /*    for(ip=pG->is; ip<=pG->ie; ip++{	   */
+ /* 	  ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc);  */
+ /*      } */
+ /*  } */
 
 
-void Constr_optDepthStack(MeshS *pM, GridS *pG){
-  // it is assumed that the source is located on the axis of symmetry
-
-//   Real r, t, z,
-//    tau_ghost,xi=0,;
-
-   Real x1is, x2js, x3ks, den,  ri, tj, zk,x1,x2,x3,
-   	   	   l,dl,tau=0,dtau=0 ;
    
-    int i,j,k,is,ie,js,je,ks,ke, il, iu, jl,ju,kl,ku,ip,jp,kp,
-	knew,my_id=0,ii;
-
-    Real abs_cart_norm, cart_norm[3], cyl_norm[3], xyz_src[3], xyz_pos[3], rtz_pos[3],rtz_in[3], xyz_p[3],
-      res[1], olpos[3],xyz_cc[3], rtz_cc[3];
-    int ijk_cur[3],iter,iter_max,lr,ir=0,i0,j0,k0,
-    		NmaxArray=1;
-    short nroot;
-
-    Real xyz_in[3], radSrcCyl[3], dist, sint, cost, s2;
-    
-//    CellOnRayData arrayDataTmp; //indices, ijk and dl
-//    int tmpIntArray1, *tmpIntArray2, *tmpIntArray3;
-
-    CellOnRayData *tmpCellIndexAndDisArray;
-	Real *tmpRealArray;
-
-    short ncros;
-
-    /* needs to be updated!
- after change in Grid of Ray */
-
-
-/* //infinite loop for parallel debugging */
-
-/* int  mpi1=1; */
-/* // while( mpi1==1 ); */
-
-/*   is = pG->is; */
-/*   ie = pG->ie; */
-/*   js = pG->js; */
-/*   je = pG->je; */
-/*   ks = pG->ks; */
-/*   ke = pG->ke; */
-/*   il = is - nghost*(ie > is); */
-/*   jl = js - nghost*(je > js); */
-/*   kl = ks - nghost*(ke > ks); */
-/*   iu = ie + nghost*(ie > is); */
-/*   ju = je + nghost*(je > js); */
-/*   ku = ke + nghost*(ke > ks); */
-
-/*   iter_max= sqrt(pow(ie,2) + pow(je,2) +pow(ke,2)); */
-
-/* //  allocating temporary array for 1D ray from point source */
-/* //  CellIndexAndCoords */
-
-/*   if ((tmpCellIndexAndDisArray=(CellOnRayData*)calloc(iter_max , sizeof(CellIndexAndCoords)))== NULL) { */
-/*       ath_error("[calloc_1d] failed to allocate memory CellIndexAndCoords\n"); */
-/*     } */
-
-
-/*   fc_pos(pG,is,js,ks, &x1is,&x2js,&x3ks); */
-
-/*   //cc_pos(pG,is,js,ks,&x1is,&x2js,&x3ks); */
-  
-  
-/*   for (kp = ks; kp<=ke; kp++) { //z */
-/*     for (jp = js; jp<=je; jp++) { //t */
-/*       for (ip = is; ip<=ie; ip++) { //r */
-
-/* 	#ifdef DBG_MPI_OPT_STACK */
-/* 	  MPI_Comm_rank(MPI_COMM_WORLD, &my_id); */
-/* 	  /\* int  mpi1=1; *\/ */
-/* 	  /\* if (my_id == 1) while( mpi1==1 ); *\/ */
-	  
-/* 	#endif */
-	  
-/* 	   /\* from ip, jp, kp get rtz position at vertices*\/ */
-/* 	   fc_pos(pG,ip,jp,kp,&rtz_pos[0],&rtz_pos[1],&rtz_pos[2]); */
-
-/*            radSrcCyl[0] = 0.; */
-/*  	   radSrcCyl[1] = rtz_pos[1]; // corresponds to phi_jp */
-/*  	   radSrcCyl[2] =  0; // a ring at z=0 */
-
-/* // 	   for parallel calls they are not the same with radSrcCyl */
-/* 	   rtz_in[0] = x1is; */
-/*  	   rtz_in[1] = rtz_pos[1]; // corresponds to phi_jp */
-/* 	   rtz_in[2] =  rtz_pos[2] * rtz_in[0] / rtz_pos[0]; */
-
-/* 	   /\* Cart. position of the entry point *\/ */
-/*  	    coordCylToCart(xyz_in, rtz_in, cos( rtz_in[1]), sin( rtz_in[1])); */
-	   	     
-/*  	   /\* Cart. position of the source point *\/ */
-/*  	    coordCylToCart(xyz_src, radSrcCyl, cos(radSrcCyl[1]), sin(radSrcCyl[1])); */
-	    
-/*  	   /\* indices of the starting point *\/ */
-/*  	   lr=celli(pG,rtz_in[0], 1./pG->dx1, &i0, &ir); */
-/*  	   lr=cellj(pG,rtz_in[1], 1./pG->dx2, &j0, &ir); */
-/*  	   lr=cellk(pG,rtz_in[2], 1./pG->dx3, &k0, &ir); */
-/*  	   ijk_cur[0] = i0; */
-/*  	   ijk_cur[1] = j0; */
-/*  	   ijk_cur[2] = k0; */
-
-/* // 	   printf("%f %d \n", x1is, i0); getchar(); */
-
-/* //	    corrected location of the source on the grid */
-
-/* 		sint = sin(rtz_pos[1]); */
-/* 		cost = cos(rtz_pos[1]); */
-/* 		/\* from rtz position get get Cart position *\/ */
-/* 		coordCylToCart(xyz_p, rtz_pos, cost, sint); */
-
-/* 		/\* get normalized  vector from start to finish *\/ */
-/* 		for(i=0;i<=2;i++) cart_norm[i]= xyz_p[i]-xyz_src[i]; */
-
-/* 		abs_cart_norm = sqrt(pow(cart_norm[0], 2)+pow(cart_norm[1], 2) */
-/* 				     +pow(cart_norm[2], 2)); */
-
-/* 		dist = absValueVector(cart_norm); */
-	
-/* 		for(i=0;i<=2;i++) cart_norm[i] = cart_norm[i]/abs_cart_norm; */
-/* 		cost = cos(radSrcCyl[1]); */
-/* 		sint = sin(radSrcCyl[1]); */
-/* 		cartVectorToCylVector(cyl_norm, cart_norm, cos(radSrcCyl[1]), sin(radSrcCyl[1])); */
-/* 		/\* tau = pG->tau_e[ kp ][ jp ][ 1 ]; *\/ */
-/* 		/\* pG->tau_e[kp][jp] [ is ] = tau; *\/ */
-	
-/* 		/\* starting point for ray-tracing *\/ */
-/* 		rtz_pos[0]=rtz_in[0]; */
-/* 		rtz_pos[1]=rtz_in[1]; */
-/* 		rtz_pos[2]=rtz_in[2]; */
-/* 		sint = sin(rtz_pos[1]); */
-/* 		cost = cos(rtz_pos[1]); */
-  
-/* 		for(i=0;i<=2;i++) xyz_pos[i]=xyz_in[i]; */
-/* 		l = 0; */
-/* 		dl =0; */
-/* 		tau = 0; */
-/* 		dtau=0; */
-
-/* 		for (iter=0; iter<=iter_max; iter++){ */
-
-/* 		  s2 = pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+pow(xyz_p[2]-xyz_pos[2],2); */
-/* 		  olpos[0]=xyz_cc[0]; */
-/* 		  olpos[1]=xyz_cc[1]; */
-/* 		  olpos[2]=xyz_cc[2]; */
-		  
-/* 		  traceGridCell(pG, res, ijk_cur, xyz_pos, rtz_pos, */
-/* 				cart_norm, cyl_norm, &ncros); */
-/* 		  /\* find new cyl coordinates: *\/ */
-/* 		  cc_pos(pG,ijk_cur[0],ijk_cur[1],ijk_cur[2],&rtz_pos[0],&rtz_pos[1],&rtz_pos[2]); */
-
-/* 		  ri = sqrt(pow(xyz_pos[0],2)+pow(xyz_pos[1],2)); */
-/* 		  tj = atan2(xyz_pos[1], xyz_pos[0]); */
-/* 		  zk =xyz_pos[2]; */
-
-/* 		  /\* we need only sign(s) of cyl_norm *\/ */
-/* 		  cyl_norm[0] = cart_norm[0]*cos(tj) + cart_norm[1]*sin(tj); */
-/* 		  cyl_norm[1] = -cart_norm[0]*sin(tj) + cart_norm[1]*cos(tj); */
-
-/* 		  dl = res[0]; */
-
-/* 		  rtz_cc[0]=rtz_pos[0]; */
-/* 		  rtz_cc[1]=rtz_pos[1]; */
-/* 		  rtz_cc[2]=rtz_pos[2]; */
-		  
-/* 		  coordCylToCart(xyz_cc, rtz_cc,  cos(rtz_cc[1]),  sin(rtz_cc[1]) ); */
-		  
-/* 		  dl = sqrt(pow(xyz_cc[0]-olpos[0],2)+pow(xyz_cc[1]-olpos[1],2)+ */
-/* 		     pow(xyz_cc[2]-olpos[2],2)); */
-
-/* 		  /\* dl = sqrt( pow(pG->dx1,2)  +  pow(pG->dx3,2) ); *\/ */
-
-/* 		  (tmpCellIndexAndDisArray[iter]).dl = dl; */
-/* 		  (tmpCellIndexAndDisArray[iter]).i = ijk_cur[0]; */
-/* 		  (tmpCellIndexAndDisArray[iter]).j = ijk_cur[1]; */
-/* 		  (tmpCellIndexAndDisArray[iter]).k = ijk_cur[2]; */
-
-/* 		  l += dl; */
-
-/* 	/\* 	  den = (pG->U[ijk_cur[2]][ijk_cur[1]][ijk_cur[0]].d < 1.05* rho0) ? *\/ */
-/* /\* 		    tiny : pG->U[ijk_cur[2]][ijk_cur[1]][ijk_cur[0]].d; *\/ */
-/* /\* 		  dtau = dl * den; *\/ */
-/* /\* /\\* dtau = dl; *\\/ *\/ */
-/* /\* 		  tau  += dtau; *\/ */
-		  
-/* 		  NmaxArray = iter+1; //To use in allocation */
-
-/* //		  tau = l; */
-/* 		  if (pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+pow(xyz_p[2]-xyz_pos[2],2)>s2){ */
-/* //			tau= 0; */
-/* 			break; */
-/* 		  } */
-		
-/* 		  /\* test if reached to the ip,jp,kp *\/ */
-/* 		  if( ijk_cur[0]==ip &&  ijk_cur[1]==jp &&  ijk_cur[2]==kp ){ */
-/* 			cc_pos(pG,ijk_cur[0], ijk_cur[1], ijk_cur[2], &x1,&x2,&x3); */
-/* 			break; */
-/* 		  } */
-
-		
-		  
-/* 		} //iter */
-
-/* 		//		pG->GridOfRays should be already allocated at init_grid.c */
-/* 		(pG->GridOfRays[kp][jp][ip]).Ray = (CellOnRayData*)calloc_1d_array(NmaxArray, sizeof(CellOnRayData)); */
-/* 		(pG->GridOfRays[kp][jp][ip]).len = NmaxArray; */
-
-/* 		/\* pG->tau_e[kp][jp][ip] = 0; *\/ */
-
-/* 		for (ii = 0; ii<NmaxArray; ii++){ */
-/* 			(pG->GridOfRays[kp][jp][ip]).Ray[ii].dl= (tmpCellIndexAndDisArray[ii]).dl; */
-/* 			(pG->GridOfRays[kp][jp][ip]).Ray[ii].i=(tmpCellIndexAndDisArray[ii]).i; */
-/* 			(pG->GridOfRays[kp][jp][ip]).Ray[ii].j=(tmpCellIndexAndDisArray[ii]).j; */
-/* 			(pG->GridOfRays[kp][jp][ip]).Ray[ii].k=(tmpCellIndexAndDisArray[ii]).k; */
-			
-/* 		}        */
-		      
-		  
-/* //		pG->tau_e[kp][jp][ip] *= Rsc*Dsc*KPE; */
-/* //		for (ii = 0; ii<(pG->GridOfRays[kp][jp][ip]).len; ii++){ */
-/* //			pG->tau_e[kp][jp][ip] += (pG->GridOfRays[kp][jp][ip].Ray[ii]).dl; */
-/* //		} */
-
-/* 		/\* pG->tau_e[kp][jp][ip]  =  tau; //pG->tau_e[kp][jp][ip]; *\/ */
-
-/* 		/\* tau=0; *\/ */
-
-
-/*       } //ip */
-/*     } //jp */
-/*   } //kp */
-
-
-/* free(tmpCellIndexAndDisArray);  end of the needed update*/
-
-//  printf(" optDepthStack \n");
-//  getchar();
 }
+
+
+
+CellOnRayData *tmpCellIndexAndDisArray;
+Real *tmpRealArray;
+short ncros;
 
 
 void ionizParam(const MeshS *pM, GridS *pG){
@@ -1038,10 +806,6 @@ void optDepthFunctions(GridS *pG){
 
 }
 
-GradVeloc()
-{
-
-}
 
 #ifdef CAK_FORCE
 Real CAK_RadPresLines(ConsS ***U, GridS *pG, const Real xi,
@@ -1554,7 +1318,8 @@ VOutFun_t get_usr_out_fun(const char *name)
 /*----------------------------------------------------------------------------*/
 
 
-/* problem:   */
+/* problem
+:   */
 //#define VP(R) (  (sqrt(r0)/(r0-2)) * pow(R/r0,-q+1)  )
 
 //#define VP(R) pow(xm,q)*pow(R, 1.-q)
@@ -1598,7 +1363,6 @@ void problem(MeshS *pM, DomainS *pDomain)
 
   int my_id;
  
-  
   is = pG->is; ie = pG->ie;
   js = pG->js; je = pG->je;
   ks = pG->ks; ke = pG->ke;
@@ -1627,7 +1391,7 @@ void problem(MeshS *pM, DomainS *pDomain)
 
   /* Read initial conditions */
   F2Fedd = par_getd("problem","F2Fedd");
-  fx = par_getd("problem","fx");
+  fx = par_getd("problem","fx");  
   fuv = par_getd("problem","fuv");
   nc0 = par_getd("problem","nc0");
   q      = par_getd("problem","q");
@@ -2015,11 +1779,9 @@ void problem(MeshS *pM, DomainS *pDomain)
  
 #ifdef MPI_PARALLEL
 
-  
 
   Constr_RayCastingOnGlobGrid(pM, pG, my_id); //mainly calc. GridOfRays
 
- 
   initGlobComBuffer(pM, pG);
 
   MPI_Barrier(MPI_COMM_WORLD);
@@ -2040,11 +1802,15 @@ void problem(MeshS *pM, DomainS *pDomain)
 #else  /* NOT PARALLEL *cd/
 
     /* printf("  pM->RootMinX[0] = %f \n\n", pM->RootMinX[0] ); */
-    Constr_optDepthStackOnGlobGrid(pM, pG); //mainly calc. GridOfRays
-    optDepthStackOnGlobGrid(pM, pG); //calc. tau
+    
+    // Constr_optDepthStackOnGlobGrid(pM, pG); //mainly calc. GridOfRays
+    
+    // optDepthStackOnGlobGrid(pM, pG); //calc. tau
+
     ionizParam(pM, pG);
-    /* Constr_optDepthStack(pM, pG);     */
-    /* optDepthStack(pM, pG); */
+    
+    // Constr_optDepthStack(pM, pG);
+    // optDepthStack(pM, pG);
     
 #endif /* MPI */
 
@@ -2089,7 +1855,7 @@ void problem(MeshS *pM, DomainS *pDomain)
 
   //  plot(pG, "d");
 
-    //while(mpi1 == 1);
+    /* while(mpi1 == 1); */
     
   return;
 }  //problem
@@ -2221,22 +1987,39 @@ void Userwork_in_loop (MeshS *pM)
   /* } */
    
   // aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "tau");
+
+
+
+
+#ifdef sgHYPRE /**********  SELF-GRAVITY ***********/
+    /* testHYPRE_1(pM, pG); */
+    testHYPRE_ex2(pM, pG);
+    printf("testHYPRE_ex2(pM, pG); done.. \n");
+#endif        /**********  SELF-GRAVITY ***********/
+    
+#else /* not parallel */
+
+
+
+
+ testSelfGravFourier(pM, pG);
+
+
+
+ // optDepthStack(pM, pG); 
+ //  optDepthStackOnGlobGrid(pM, pG);
+ //  ionizParam(pM, pG);
   
-#else
+   
 
 
-   optDepthStackOnGlobGrid(pM, pG);
-
-   ionizParam(pM, pG);
-  
- 
- 
-
-   /* optDepthStack(pM, pG); */
+   
    /* plot(pM, "xi");    */
-#endif /* parallel */
 
-#endif
+#endif /* MPI */
+
+
+#endif /* XRAYS */
       
 
 
@@ -3817,7 +3600,7 @@ static void unPackGlobBufForGlobSync(MeshS *pM, GridS *pG, int *ext_id, int W2Do
 }
 
 void freeGlobArrays()
-{
+{ 
   free_1d_array(recv_rq);
   free_1d_array(send_rq);
   free_2d_array(BufBndr);
@@ -3855,37 +3638,6 @@ int cellk_Glob(const MeshS *pM, const Real z, const Real dx3_1, int *k, Real *c,
   else return 1;			/* in the right half of the cell*/
 }
 
-
-/* =================================================================================== */
-/*                                   GRAVITY SOLVER                                    */
-/* =================================================================================== */
-
-void testSelfGravFourier( MeshS *pM, GridS *pG){
-
-
-
-}
-
-void calcGravitySolverParams(MeshS *pM, GridS *pG){
-
-  Real res;
-
-  
-    
-  res = rf(0.1, 0.1, 0.1);
-
-
-  printf("calcGravitySolverParams %f \n", res);
-  
-  apause();
-  
-}
-
-void gravPotAtBndry(MeshS *pM, GridS *pG){
-  /* calculate grav pot at the boundary */
-
-
-}
 
 
 
@@ -3998,7 +3750,6 @@ float rd(float x, float y, float z)
   return 3.0*sum+fac*(1.0+ed*(-C1+C5*ed-C6*delz*ee)
 		      +delz*(C2*ee+delz*(-C3*ec+delz*C4*ea)))/(ave*sqrt(ave));
 }
-
 
 
 float ellf(float phi, float ak)

@@ -43,6 +43,7 @@ ifeq (@FFT_MODE@,FFT_ENABLED)
 	(cd src/fftsrc; $(MAKE) compile)
 endif
 	(cd src/gravity; $(MAKE) compile)
+	(cd src/agravity; $(MAKE) compile)
 	(cd src/integrators; $(MAKE) compile)
 	(cd src/microphysics; $(MAKE) compile)
 	(cd src/particles; $(MAKE) compile)
@@ -55,6 +56,7 @@ endif
 clean:
 	(cd src/fftsrc; $(MAKE) clean)
 	(cd src/gravity; $(MAKE) clean)
+	(cd src/agravity; $(MAKE) clean)
 	(cd src/integrators; $(MAKE) clean)
 	(cd src/microphysics; $(MAKE) clean)
 	(cd src/particles; $(MAKE) clean)
