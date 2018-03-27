@@ -22,5 +22,8 @@ bin/athena
 **/Makedepend
 **/.DS_Store
 
+bin/*
+!/bin/athinput.torus10
+
 .*
 !/.gitignore
