@@ -110,7 +110,7 @@ int cellk_Glob(const MeshS *pM, const Real z, const Real dx3_1, int *k, Real *c,
 
 void initGlobComBuffer(const MeshS *pM, const GridS *pG );
 void AllocateSendRecvGlobBuffers(const MeshS *pM, const GridS *pG);
-void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do);
+void SyncGridGlob(MeshS *pM, GridS *pG, int W2Do);
 
 static void packGridForGlob(MeshS *pM, GridS *pG, int* my_id, int W2Do);
 static void packGlobBufForGlobSync(MeshS *pM, GridS *pG, int* myid, int W2Do);
@@ -118,6 +118,10 @@ static void packGlobBufForGlobSync(MeshS *pM, GridS *pG, int* myid, int W2Do);
 static void unPackAndFetchToGlobGrid(MeshS *pM, GridS *pG, int* ext_id, int W2Do);
 static void unPackGlobBufForGlobSync(MeshS *pM, GridS *pG, int* ext_id, int W2Do);
 
+
+void torus_re_construct(const MeshS *pM, GridS *pG);
+
+  
 void freeGlobArrays();
 
 int  mpi1=1;
@@ -2024,11 +2028,11 @@ void problem(MeshS *pM, DomainS *pDomain)
 
   MPI_Barrier(MPI_COMM_WORLD);
   /* sync global patch */   
-  SyncGridGlob(pM, &pDomain, pG, ID_DEN);
+  SyncGridGlob(pM, pG, ID_DEN);
 
 
   optDepthStackOnGlobGrid(pM, pG, my_id); //calc. tau 
-  SyncGridGlob(pM, &pDomain, pG, ID_TAU);
+  SyncGridGlob(pM, pG, ID_TAU);
            
   ionizParam(pM, pG);
 
@@ -2115,31 +2119,71 @@ void problem_write_restart(MeshS *pM, FILE *fp)
 void problem_read_restart(MeshS *pM, FILE *fp)
 //void problem_read_restart(GridS *pG, DomainS *pD, FILE *fp)
 {
+  DomainS pD = pM->Domain[0][0];
   GridS *pG=pM->Domain[0][0].Grid;
+  
+  int my_id;
+  
+#ifdef XRAYS
+  /* optical depth is calculated for a given domain, boundary conditions are applied in */
+#ifdef MPI_PARALLEL
+  
+if(MPI_SUCCESS != MPI_Comm_rank(MPI_COMM_WORLD, &my_id))
+    ath_error("[main]: Error on calling MPI_Comm_rank in read restart torus10.c\n");
 
-  //  q = par_getd("problem","q");
-  //  r0 = par_getd("problem","r0");
-  //  r_in = par_getd("problem","r_in");
-  //  rho0 = par_getd("problem","rho0");
-  //  e0 = par_getd("problem","e0");
-  //	seed = par_getd("problem","seed");
+  /* Read initial conditions */
+  F2Fedd = par_getd("problem","F2Fedd");
+  fx = par_getd("problem","fx");
+  fuv = par_getd("problem","fuv");
+  nc0 = par_getd("problem","nc0");
+  q      = par_getd("problem","q");
+  r0     = par_getd("problem","r0");
+  r_in   = par_getd("problem","r_in");
+  rho0   = par_getd("problem","rho0");
+  e0     = par_getd("problem","e0");
+  seed   = par_getd("problem","seed");
+  dcut = par_getd("problem","dcut");
+  beta = par_getd("problem","beta");
 
-  //#ifdef MHD
-  //  dcut = par_getd("problem","dcut");
-  //  beta = par_getd("problem","beta");
-  //#endif
-
+  
+  
   /* Enroll the gravitational function and radial BC */
   StaticGravPot = grav_pot;
+
   x1GravAcc = grav_acc;
 
   calcProblemParameters();
+  
   printProblemParameters();
 
-  bvals_mhd_fun(pG, left_x1,  inX1BoundCond );
-  bvals_mhd_fun(pG, left_x3,  diode_outflow_ix3 );
-  bvals_mhd_fun(pG, right_x3, diode_outflow_ox3);
+  torus_re_construct(pM, pG);
 
+   
+    
+  bvals_mhd_fun(&pD, left_x1,  inX1BoundCond );
+  bvals_mhd_fun(&pD, left_x3,  diode_outflow_ix3 );
+  bvals_mhd_fun(&pD, right_x3, diode_outflow_ox3);
+
+  
+  Constr_RayCastingOnGlobGrid(pM, pG, my_id); //mainly calc. GridOfRays
+  
+  initGlobComBuffer(pM, pG);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  /* sync global patch */   
+  /* SyncGridGlob(pM, &pDomain, pG, ID_DEN); */
+  SyncGridGlob(pM, pG, ID_DEN);
+
+  optDepthStackOnGlobGrid(pM, pG, my_id); //calc. tau
+  
+  SyncGridGlob(pM, pG, ID_TAU);
+           
+  ionizParam(pM, pG);
+
+#endif /* MPI */
+#endif
+
+  
   return;
 }
 
@@ -2204,12 +2248,12 @@ void Userwork_in_loop (MeshS *pM)
 
   MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
 
-  SyncGridGlob(pM, &pD, pG, ID_DEN);
+  SyncGridGlob(pM, pG, ID_DEN);
 
   
   optDepthStackOnGlobGrid(pM, pG, my_id);
   
-  SyncGridGlob(pM, &pD, pG, ID_TAU);  
+  SyncGridGlob(pM, pG, ID_TAU);  
 
   ionizParam(pM, pG);
 
@@ -3575,7 +3619,7 @@ void AllocateSendRecvGlobBuffers(const MeshS *pM, const GridS *pG )
 }
    
 //#define dbgSyncGridGlob
-void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do)
+void SyncGridGlob(MeshS *pM, GridS *pG, int W2Do)
   /* syncs grid patches to global var */
 {
     
@@ -4275,3 +4319,71 @@ float ellf(float phi, float ak)
 /* //  printf(" optDepthStack \n"); */
 /* //  getchar(); */
 /* } */
+
+void torus_re_construct(const MeshS *pM, GridS *pG){
+/* Build 3D arrays related to Xray processing */
+  int n1z,n2z,n3z;
+    
+      if (pG->Nx[0] > 1)
+	n1z = pG->Nx[0] + 2*nghost;
+      else
+        n1z = 1;
+
+      if (pG->Nx[1] > 1)
+        n2z = pG->Nx[1] + 2*nghost;
+      else
+        n2z = 1;
+
+      if (pG->Nx[2] > 1)
+        n3z = pG->Nx[2] + 2*nghost;
+      else
+        n3z = 1;
+
+  
+#ifdef XRAYS
+      //ionization parameter
+      pG->xi = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
+      if (pG->xi == NULL) goto on_error_xrays_xi;
+
+      //    optical depth array
+      pG->tau_e = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
+      if (pG->tau_e == NULL) goto on_error_xrays_tau_e;
+
+      //a      pG->disp = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
+      //a if (pG->disp == NULL) goto on_error_xrays_disp;
+            
+    
+      yglob_sz[0]= pM->Nx[0];     
+      yglob_sz[1]= pM->Nx[1];
+      yglob_sz[2]= pM->Nx[2];
+	
+      pG->yglob = (LocDatStructForRay***)calloc_3d_array(yglob_sz[2],yglob_sz[1],yglob_sz[0],
+							 sizeof(LocDatStructForRay));
+      if (pG->yglob == NULL) goto on_error_xrays_yglob;
+
+      pG->GridOfRays = (RayData**)calloc_2d_array(yglob_sz[2], yglob_sz[0], sizeof(RayData));        
+      if (pG->GridOfRays == NULL) goto on_error_xrays_GridOfRays;
+              
+#ifdef XRAYS
+
+    on_error_xrays_xi:
+		free_3d_array(pG->xi);
+    on_error_xrays_tau_e:
+		free_3d_array(pG->tau_e);
+    on_error_xrays_GridOfRays:
+                free_3d_array(pG->GridOfRays);		
+		//a    /* on_error_xrays_disp: */
+    /* 		free_3d_array(pG->disp); */
+    on_error_xrays_yglob:
+
+		free_3d_array(pG->yglob);
+
+		
+#endif
+      
+#endif /* XRAYS */
+
+}
+
+
+  

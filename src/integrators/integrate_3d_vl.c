@@ -680,7 +680,7 @@ void integrate_3d_vl(DomainS *pD)
 	  coolf = (*CoolingFunc)(Uhalf[k][j][i].E, Uhalf[k][j][i].d,
 				 Uhalf[k][j][i].M1, Uhalf[k][j][i].M2, Uhalf[k][j][i].M3,
 				 Uhalf[k][j][i].B1c, Uhalf[k][j][i].B2c, Uhalf[k][j][i].B3c,
-				 pG->xi[k][j][i], hdt, i, j, k );
+				 pG->tau_e[k][j][i], hdt, i, j, k );
 
 	  Uhalf[k][j][i].E -= hdt*coolf;
 #endif
@@ -1499,7 +1499,7 @@ void integrate_3d_vl(DomainS *pD)
 	  coolf = (*CoolingFunc)(pG->U[k][j][i].E, pG->U[k][j][i].d,
 				 pG->U[k][j][i].M1, pG->U[k][j][i].M2, pG->U[k][j][i].M3,
 				 pG->U[k][j][i].B1c, pG->U[k][j][i].B2c, pG->U[k][j][i].B3c,
-				 pG->xi[k][j][i], hdt, i, j, k );	  
+				 pG->tau_e[k][j][i], hdt, i, j, k );	  
 	  pG->U[k][j][i].E  -= pG->dt *coolf;
 
 #endif	  

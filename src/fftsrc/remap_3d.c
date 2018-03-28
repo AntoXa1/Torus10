@@ -14,7 +14,7 @@
 
 #include "stdio.h"
 #include "mpi.h"
-#include "malloc.h"
+/* #include "malloc.h"x */
 #include "assert.h"
 
 #include "pack_3d.h"
