@@ -298,7 +298,6 @@ typedef struct RayData{
 	CellOnRayData  *Ray;
 }RayData;
 
-<<<<<<< HEAD
 int yglob_sz[3];
 
 typedef struct LocDatStructForRay{
@@ -383,7 +382,7 @@ typedef struct Grid_s{
 
 #ifdef XRAYS
   Real ***xi ;	   // ionization parameter
-  Real ***tau_e; //optical depth
+  float ***tau_e; //optical depth
   //a  Real ***disp; //displacement
 
 
