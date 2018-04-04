@@ -59,6 +59,9 @@ float rf(float x, float y, float z);
 
 void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id);
 // void optDepthStack(MeshS *pM, GridS *pG);
+void Constr_SegmentsFromRays(MeshS *pM, GridS *pG, int);
+enum BCBufId CheckCrossBlockBdry(int i, int k, int my_id);
+  
 void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id);
 void ionizParam(const MeshS *pM, GridS *pG);
 void optDepthFunctions(GridS *pG);
@@ -89,7 +92,7 @@ void testRayTracings( MeshS *pM, GridS *pG);
 void traceGridCell(GridS *pG, Real *res, int ijk_cur[3], Real xpos[3], Real* x1x2x3, const Real
 		   cartnorm[3], const Real cylnorm[3], short*);
 void traceGridCellOnGlobGrid(MeshS *pM,GridS *pG, Real *res, int *ijk_cur, Real *xyz_pos,
-		   Real* rtz_pos, const Real *cart_norm, const Real *cyl_norm,			    
+			     Real* rtz_pos, const Real *cart_norm, const Real *cyl_norm,			    
 			     short* nroot);
 void coordCylToCart(Real*, const Real*,const Real, const Real );
 void cartVectorToCylVector(Real*, const Real*, const Real, const Real);
@@ -134,7 +137,7 @@ static Real Ctor, Kbar, nAd, q1, xm, rgToR0,Tx,Rg,MBH_in_gram,Tgmin,
 
 
 static double
-  CL = 2.997925E10,
+CL = 2.997925E10,
   GRV = 6.67384E-8,
   QE=4.80325E-10,
   MSUN = 1.989E33,
@@ -157,7 +160,7 @@ static double
 
 #ifdef SOLOV
 static Real
-  Kbar_Sol,
+Kbar_Sol,
   Br0_Sol = 1.,
   Br1_Sol = 6.,
 
@@ -197,7 +200,7 @@ static MPI_Request *recv_rq, *send_rq;
 void getIndexOfCellByZ(GridS *pG, Real z, int  *k){
   *k= (int)( (z - pG->MinX[2])/pG->dx3 -0.5 ) + pG->ks;
   /* printf(" %d, \n",*k); getchar(); */
-  }
+}
 //	*px1 = pG->MinX[0] + ((Real)(i - pG->is) + 0.5)*pG->dx1;
 //	*px2 = pG->MinX[1] + ((Real)(j - pG->js) + 0.5)*pG->dx2;
 //	*px3 = pG->MinX[2] + ((Real)(k - pG->ks) + 0.5)*pG->dx3;
@@ -213,10 +216,10 @@ void apause(){
 #ifdef MPI_PARALLEL
 
 void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
- /* by the time this function is executed, density must be synced on global grid */
+  /* by the time this function is executed, density must be synced on global grid */
   
   int i,j,k,is,ie,js,je,ks,ke, il, iu, jl,ju,kl,ku,ip,jp,kp, iloc,jloc,kloc,
- 	 ii;
+    ii;
   Real den,dtau,dl,tau;
    
   is = 0;
@@ -227,26 +230,26 @@ void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   ke = pM->Nx[2]-1;
  
 
-   /* printf(" in optDepthStackOnGlobGrid:  %d  %d  %d %d  %d  %d  id = %d \n\n", */
-   /* 	  BufBndr[my_id][0], BufBndr[my_id][1], BufBndr[my_id][2], */
-   /* 	  BufBndr[my_id][3], BufBndr[my_id][4], BufBndr[my_id][5], */
-   /* 	  my_id); */
+  /* printf(" in optDepthStackOnGlobGrid:  %d  %d  %d %d  %d  %d  id = %d \n\n", */
+  /* 	  BufBndr[my_id][0], BufBndr[my_id][1], BufBndr[my_id][2], */
+  /* 	  BufBndr[my_id][3], BufBndr[my_id][4], BufBndr[my_id][5], */
+  /* 	  my_id); */
 
-   /* printf("is, ie = %d %d id = %d \n", BufBndr[my_id][0], BufBndr[my_id][3], my_id); */
+  /* printf("is, ie = %d %d id = %d \n", BufBndr[my_id][0], BufBndr[my_id][3], my_id); */
    
   for (kp = BufBndr[my_id][2]; kp <= BufBndr[my_id][5]; kp++) {     
     for (jp = BufBndr[my_id][1]; jp<=BufBndr[my_id][4]; jp++) {
       for (ip =BufBndr[my_id][0]; ip<=BufBndr[my_id][3]; ip++) {
 
-/* #ifndef MPI_PARALLEL /\* if Not parallel *\/ */
-/* 	ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc); */
-/* 	pG->yglob[kp][jp][ip].ro = pG->U[kloc][jloc][iloc].d; */
-/* #endif */
+	/* #ifndef MPI_PARALLEL /\* if Not parallel *\/ */
+	/* 	ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc); */
+	/* 	pG->yglob[kp][jp][ip].ro = pG->U[kloc][jloc][iloc].d; */
+	/* #endif */
 
 	//printf("NmaxArray= %d \n\n ", pG->GridOfRays[kp][jp][ip].len);
 	//	printf("is, ie = %d %d id = %d \n", BufBndr[my_id][0], BufBndr[my_id][3], my_id);
 
-       /* printf("ip = %d id = %d\n", ip, my_id); */
+	/* printf("ip = %d id = %d\n", ip, my_id); */
 	       
 	pG->yglob[kp][jp][ip].tau = 0.;
  	tau=0;
@@ -287,51 +290,51 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   // it is assumed that the source is located on the axis of symmetry
 
 
-   Real x1is, x2js, x3ks, den,  ri, tj, zk,x1,x2,x3,
-   	   	   l,dl,tau=0,dtau=0 ;
+  Real x1is, x2js, x3ks, den,  ri, tj, zk,x1,x2,x3,
+    l,dl,tau=0,dtau=0 ;
    
-   int i,j,k,is,ie,js,je,ks,ke,ip,jp,kp,iloc,jloc,kloc,
-	knew,ii;
+  int i,j,k,is,ie,js,je,ks,ke,ip,jp,kp,iloc,jloc,kloc,
+    knew,ii;
 
-    Real abs_cart_norm, cart_norm[3], cyl_norm[3], xyz_src[3], xyz_pos[3], rtz_pos[3],rtz_in[3], xyz_p[3],
-      res[1], olpos[3],xyz_cc[3], rtz_cc[3];
-    int ijk_cur[3],iter,iter_max,lr,ir=0,i0,j0,k0,
-    		NmaxArray=1;
-    short nroot;
-    Real xyz_in[3], radSrcCyl[3], dist, sint, cost, s2;
+  Real abs_cart_norm, cart_norm[3], cyl_norm[3], xyz_src[3], xyz_pos[3], rtz_pos[3],rtz_in[3], xyz_p[3],
+    res[1], olpos[3],xyz_cc[3], rtz_cc[3];
+  int ijk_cur[3],iter,iter_max,lr,ir=0,i0,j0,k0,
+    NmaxArray=1;
+  short nroot;
+  Real xyz_in[3], radSrcCyl[3], dist, sint, cost, s2;
     
-//    CellOnRayData arrayDataTmp; //indices, ijk and dl
-//    int tmpIntArray1, *tmpIntArray2, *tmpIntArray3;
+  //    CellOnRayData arrayDataTmp; //indices, ijk and dl
+  //    int tmpIntArray1, *tmpIntArray2, *tmpIntArray3;
 
-    CellOnRayData *tmpCellIndexAndDisArray;
-    Real *tmpRealArray;
+  CellOnRayData *tmpCellIndexAndDisArray;
+  Real *tmpRealArray;
 
-    short ncros;
-
-
- int  mpi1=1;
+  short ncros;
 
 
-    is = 0;
-    ie = pM->Nx[0]-1;
+  int  mpi1=1;
 
-    js = 0;
-    je = pM->Nx[1]-1;       
 
-    ks = 0;
-    ke = pM->Nx[2]-1;
+  is = 0;
+  ie = pM->Nx[0]-1;
+
+  js = 0;
+  je = pM->Nx[1]-1;       
+
+  ks = 0;
+  ke = pM->Nx[2]-1;
 
 
   
- iter_max= sqrt(pow(ie,2) + pow(je,2) +pow(ke,2));
+  iter_max= sqrt(pow(ie,2) + pow(je,2) +pow(ke,2));
 
-//  allocating temporary array for 1D ray from point source
-//  CellIndexAndCoords
+  //  allocating temporary array for 1D ray from point source
+  //  CellIndexAndCoords
 
   if ((tmpCellIndexAndDisArray=(CellOnRayData*)calloc(iter_max ,
-			   sizeof(CellIndexAndCoords)))== NULL) {
-      ath_error("[calloc_1d] failed to allocate memory CellIndexAndCoords\n");
-    }
+						      sizeof(CellIndexAndCoords)))== NULL) {
+    ath_error("[calloc_1d] failed to allocate memory CellIndexAndCoords\n");
+  }
 
   cc_posGlobFromGlobIndx(pM, pG,is,js,ks, &x1is,&x2js,&x3ks);
 
@@ -341,220 +344,329 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   jp = js;
 
 
-while( mpi1==1 );
+  /* while( mpi1==1 ); */
 
- /* int id1,id2,id3; */
- /* get_myGridIndex() */
+  /* int id1,id2,id3; */
+  /* get_myGridIndex() */
 		
   for (kp = ks; kp <= ke; kp++) { //z
-     for (ip = is; ip <= ie; ip++) { //r
+    for (ip = is; ip <= ie; ip++) { //r
 
-      #ifndef MPI_PARALLEL /* if Not parallel */
-	ath_error("[Constr_RayCastingOnGlobGrid] is not working in parallel\n");
-	/* pG->yglob[kp][jp][ip].ro = pG->U[kloc][jloc][iloc].d; */
-      #endif
+#ifndef MPI_PARALLEL /* if Not parallel */
+      ath_error("[Constr_RayCastingOnGlobGrid] is not working in parallel\n");
+      /* pG->yglob[kp][jp][ip].ro = pG->U[kloc][jloc][iloc].d; */
+#endif
 	  
-	  /* from ip, jp, kp get rtz position */
-	cc_posGlobFromGlobIndx(pM,pG,ip,jp,kp,&rtz_pos[0],&rtz_pos[1],&rtz_pos[2]);
+      /* from ip, jp, kp get rtz position */
+      cc_posGlobFromGlobIndx(pM,pG,ip,jp,kp,&rtz_pos[0],&rtz_pos[1],&rtz_pos[2]);
 	   
-	radSrcCyl[0] = 0.;
-	radSrcCyl[1] = rtz_pos[1]; // corresponds to phi_jp
-	radSrcCyl[2] =  0; // a ring at z=0
+      radSrcCyl[0] = 0.;
+      radSrcCyl[1] = rtz_pos[1]; // corresponds to phi_jp
+      radSrcCyl[2] =  0; // a ring at z=0
 
-// 	   for parallel calls they are not the same with radSrcCyl
-	rtz_in[0] = x1is;
-	rtz_in[1] = rtz_pos[1]; // corresponds to phi_jp
-	rtz_in[2] = rtz_pos[2] * rtz_in[0] / rtz_pos[0];
+      // 	   for parallel calls they are not the same with radSrcCyl
+      rtz_in[0] = x1is;
+      rtz_in[1] = rtz_pos[1]; // corresponds to phi_jp
+      rtz_in[2] = rtz_pos[2] * rtz_in[0] / rtz_pos[0];
 
-	/* Cart. position of the entry point */
-	coordCylToCart(xyz_in, rtz_in, cos( rtz_in[1]), sin( rtz_in[1]));
+      /* Cart. position of the entry point */
+      coordCylToCart(xyz_in, rtz_in, cos( rtz_in[1]), sin( rtz_in[1]));
 	   	     
-	/* Cart. position of the source point */
-	coordCylToCart(xyz_src, radSrcCyl, cos(radSrcCyl[1]), sin(radSrcCyl[1]));
+      /* Cart. position of the source point */
+      coordCylToCart(xyz_src, radSrcCyl, cos(radSrcCyl[1]), sin(radSrcCyl[1]));
 	    
-	/* pG->disp[kp][jp][ip] =  sqrt(pow(rtz_in[0]-radSrcCyl[0],2)+ pow( rtz_in[2] 
-	   - radSrcCyl[2],2)); */	    
-	/* Cart. position of the starting point --> displacemnet*/
+      /* pG->disp[kp][jp][ip] =  sqrt(pow(rtz_in[0]-radSrcCyl[0],2)+ pow( rtz_in[2] 
+	 - radSrcCyl[2],2)); */	    
+      /* Cart. position of the starting point --> displacemnet*/
 
-	/* indices of the starting point */
+      /* indices of the starting point */
 	
-	lr=celli_Glob(pM, rtz_in[0], 1./pG->dx1, &i0, &ir, is); 
+      lr=celli_Glob(pM, rtz_in[0], 1./pG->dx1, &i0, &ir, is); 
 
-	lr=cellj_Glob(pM,rtz_in[1], 1./pG->dx2, &j0, &ir, js);
+      lr=cellj_Glob(pM,rtz_in[1], 1./pG->dx2, &j0, &ir, js);
 
-	/* lr=cellj_Glob(pM,rtz_in[1], 1./pG->dx2, &j0, &ir, jp); */
+      /* lr=cellj_Glob(pM,rtz_in[1], 1./pG->dx2, &j0, &ir, jp); */
 	
-	lr=cellk_Glob(pM,rtz_in[2], 1./pG->dx3, &k0, &ir, ks);
+      lr=cellk_Glob(pM,rtz_in[2], 1./pG->dx3, &k0, &ir, ks);
 
 	
-	ijk_cur[0] = i0;
-	ijk_cur[1] = j0;
-	ijk_cur[2] = k0;
+      ijk_cur[0] = i0;
+      ijk_cur[1] = j0;
+      ijk_cur[2] = k0;
 
-// 	   printf("%f %d \n", x1is, i0); getchar();
-//	    corrected location of the source on the grid
-//		cc_pos(pG,i0,j0,k0,&rtz_pos[0],&rtz_pos[1],&rtz_pos[2]);
+      // 	   printf("%f %d \n", x1is, i0); getchar();
+      //	    corrected location of the source on the grid
+      //		cc_pos(pG,i0,j0,k0,&rtz_pos[0],&rtz_pos[1],&rtz_pos[2]);
 
-	sint = sin(rtz_pos[1]);
-	cost = cos(rtz_pos[1]);
-	/* from rtz position get get Cart position */
-	coordCylToCart(xyz_p, rtz_pos, cost, sint);
+      sint = sin(rtz_pos[1]);
+      cost = cos(rtz_pos[1]);
+      /* from rtz position get get Cart position */
+      coordCylToCart(xyz_p, rtz_pos, cost, sint);
 
-	/* get normalized  vector from start to finish */
-	for(i=0;i<=2;i++) cart_norm[i]= xyz_p[i]-xyz_src[i];
+      /* get normalized  vector from start to finish */
+      for(i=0;i<=2;i++) cart_norm[i]= xyz_p[i]-xyz_src[i];
 
-	abs_cart_norm = sqrt(pow(cart_norm[0], 2)+pow(cart_norm[1], 2)+pow(cart_norm[2], 2));
+      abs_cart_norm = sqrt(pow(cart_norm[0], 2)+pow(cart_norm[1], 2)+pow(cart_norm[2], 2));
 
-	dist = absValueVector(cart_norm);
+      dist = absValueVector(cart_norm);
 	
-	for(i=0;i<=2;i++) cart_norm[i] = cart_norm[i]/abs_cart_norm;
-	cost = cos(radSrcCyl[1]);
-	sint = sin(radSrcCyl[1]);
-	cartVectorToCylVector(cyl_norm, cart_norm, cos(radSrcCyl[1]), sin(radSrcCyl[1]));
-	/* tau = pG->tau_e[ kp ][ jp ][ 1 ]; */
-	/* pG->tau_e[kp][jp] [ is ] = tau; */
+      for(i=0;i<=2;i++) cart_norm[i] = cart_norm[i]/abs_cart_norm;
+      cost = cos(radSrcCyl[1]);
+      sint = sin(radSrcCyl[1]);
+      cartVectorToCylVector(cyl_norm, cart_norm, cos(radSrcCyl[1]), sin(radSrcCyl[1]));
+      /* tau = pG->tau_e[ kp ][ jp ][ 1 ]; */
+      /* pG->tau_e[kp][jp] [ is ] = tau; */
 	
-	/* starting point for ray-tracing */
-	rtz_pos[0]=rtz_in[0];
-	rtz_pos[1]=rtz_in[1];
-	rtz_pos[2]=rtz_in[2];
-	sint = sin(rtz_pos[1]);
-	cost = cos(rtz_pos[1]);
+      /* starting point for ray-tracing */
+      rtz_pos[0]=rtz_in[0];
+      rtz_pos[1]=rtz_in[1];
+      rtz_pos[2]=rtz_in[2];
+      sint = sin(rtz_pos[1]);
+      cost = cos(rtz_pos[1]);
   
-	for(i=0;i<=2;i++){
-	  xyz_pos[i]=xyz_in[i];
-	  xyz_cc[i]=xyz_in[i];
-	}
+      for(i=0;i<=2;i++){
+	xyz_pos[i]=xyz_in[i];
+	xyz_cc[i]=xyz_in[i];
+      }
 		
-	l = 0;
-	dl =0;
-	tau = 0;
-	dtau=0;
+      l = 0;
+      dl =0;
+      tau = 0;
+      dtau=0;
 
-	for (iter=0; iter<=iter_max; iter++){
+      for (iter=0; iter<=iter_max; iter++){
 
-	  s2 = pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+pow(xyz_p[2]-xyz_pos[2],2);
-	  olpos[0]=xyz_cc[0];
-	  olpos[1]=xyz_cc[1];
-	  olpos[2]=xyz_cc[2];
+	s2 = pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+pow(xyz_p[2]-xyz_pos[2],2);
+	olpos[0]=xyz_cc[0];
+	olpos[1]=xyz_cc[1];
+	olpos[2]=xyz_cc[2];
 		  
-	  traceGridCellOnGlobGrid(pM, pG, res, ijk_cur, xyz_pos, rtz_pos,
-				  cart_norm, cyl_norm, &ncros);
+	traceGridCellOnGlobGrid(pM, pG, res, ijk_cur, xyz_pos, rtz_pos,
+				cart_norm, cyl_norm, &ncros);
 	  
-	  /* find new cyl coordinates: */
-	  cc_posGlobFromGlobIndx(pM,pG,ijk_cur[0],ijk_cur[1],ijk_cur[2],
-				 &rtz_pos[0],&rtz_pos[1],&rtz_pos[2]);
+	/* find new cyl coordinates: */
+	cc_posGlobFromGlobIndx(pM,pG,ijk_cur[0],ijk_cur[1],ijk_cur[2],
+			       &rtz_pos[0],&rtz_pos[1],&rtz_pos[2]);
 
-	  ri = sqrt(pow(xyz_pos[0],2)+pow(xyz_pos[1],2));
-	  tj = atan2(xyz_pos[1], xyz_pos[0]);
-	  zk =xyz_pos[2];
+	ri = sqrt(pow(xyz_pos[0],2)+pow(xyz_pos[1],2));
+	tj = atan2(xyz_pos[1], xyz_pos[0]);
+	zk =xyz_pos[2];
 
-	  /* we need only sign(s) of cyl_norm */
-	  cyl_norm[0] = cart_norm[0]*cos(tj) + cart_norm[1]*sin(tj);
-	  cyl_norm[1] = -cart_norm[0]*sin(tj) + cart_norm[1]*cos(tj);
+	/* we need only sign(s) of cyl_norm */
+	cyl_norm[0] = cart_norm[0]*cos(tj) + cart_norm[1]*sin(tj);
+	cyl_norm[1] = -cart_norm[0]*sin(tj) + cart_norm[1]*cos(tj);
 
-	  dl = res[0];
+	dl = res[0];
 
-	  rtz_cc[0]=rtz_pos[0];
-	  rtz_cc[1]=rtz_pos[1];
-	  rtz_cc[2]=rtz_pos[2];
+	rtz_cc[0]=rtz_pos[0];
+	rtz_cc[1]=rtz_pos[1];
+	rtz_cc[2]=rtz_pos[2];
 		  
-	  coordCylToCart(xyz_cc, rtz_cc,  cos(rtz_cc[1]),  sin(rtz_cc[1]) );
+	coordCylToCart(xyz_cc, rtz_cc,  cos(rtz_cc[1]),  sin(rtz_cc[1]) );
 		  
-	  dl = sqrt(pow(xyz_cc[0]-olpos[0],2)+pow(xyz_cc[1]-olpos[1],2)+
-		    pow(xyz_cc[2]-olpos[2],2));
+	dl = sqrt(pow(xyz_cc[0]-olpos[0],2)+pow(xyz_cc[1]-olpos[1],2)+
+		  pow(xyz_cc[2]-olpos[2],2));
 
-	  /* dl = sqrt( pow(pG->dx1,2)  +  pow(pG->dx3,2) ); */
+	/* dl = sqrt( pow(pG->dx1,2)  +  pow(pG->dx3,2) ); */
 
-	  (tmpCellIndexAndDisArray[iter]).dl = dl;
-	  (tmpCellIndexAndDisArray[iter]).i = ijk_cur[0];
+	(tmpCellIndexAndDisArray[iter]).dl = dl;
+	(tmpCellIndexAndDisArray[iter]).i = ijk_cur[0];
 
-	  // (tmpCellIndexAndDisArray[iter]).j = jp;
+	// (tmpCellIndexAndDisArray[iter]).j = jp;
 
-	  (tmpCellIndexAndDisArray[iter]).j = ijk_cur[1];
+	(tmpCellIndexAndDisArray[iter]).j = ijk_cur[1];
 
 	  
-	  /* if ((my_id == 1) && (ip==62) && (kp==14)) { */
-	  /*      while(mpi1 == 1 );	     	   */
-	  /*  } */
+	/* if ((my_id == 1) && (ip==62) && (kp==14)) { */
+	/*      while(mpi1 == 1 );	     	   */
+	/*  } */
 	  
-	  (tmpCellIndexAndDisArray[iter]).k = ijk_cur[2];
+	(tmpCellIndexAndDisArray[iter]).k = ijk_cur[2];
 
-	  l += dl;
+	l += dl;
        
 	  
-	  NmaxArray = iter+1; //To use in allocation
+	NmaxArray = iter+1; //To use in allocation
 
-	  if (pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+
-	      pow(xyz_p[2]-xyz_pos[2],2)>s2){
+	if (pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+
+	    pow(xyz_p[2]-xyz_pos[2],2)>s2){
 	    
-	    //			tau= 0;
+	  //			tau= 0;
 
-	    break;
-	  }
+	  break;
+	}
 		 
 
-	  /* test if reached to the ip,jp,kp */
-	  if( (ijk_cur[0]==ip  &&  ijk_cur[2]==kp)
-	  /* if( (ijk_cur[0]==ip &&  ijk_cur[2]==kp) */
-	      /* || (ijk_cur[]==ip &&  ijk_cur[1]==jp &&  ijk_cur[2]==kp) */
-	      ){
-	    // cc_pos(pG, ijk_cur[0], ijk_cur[1], ijk_cur[2], &x1, &x2, &x3);
+	/* test if reached to the ip,jp,kp */
+	if( (ijk_cur[0]==ip  &&  ijk_cur[2]==kp)
+	    /* if( (ijk_cur[0]==ip &&  ijk_cur[2]==kp) */
+	    /* || (ijk_cur[]==ip &&  ijk_cur[1]==jp &&  ijk_cur[2]==kp) */
+	    ){
+	  // cc_pos(pG, ijk_cur[0], ijk_cur[1], ijk_cur[2], &x1, &x2, &x3);
 
-	    break;
-	  }		  
+	  break;
+	}		  
 
 
-	} //iter
+      } //iter
 
 
 
 	
 	//pG->GridOfRays should be already allocated at init_grid.c
 
-	(pG->GridOfRays[kp][ip]).Ray =
-	  (CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData));
+      (pG->GridOfRays[kp][ip]).Ray =
+	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData));
 
-	(pG->GridOfRays[kp][ip]).len = NmaxArray;
+      (pG->GridOfRays[kp][ip]).len = NmaxArray;
 
-	pG->tau_e[kp][jp][ip] = 0;
+      pG->tau_e[kp][jp][ip] = 0;
       
-	for (ii = 0; ii<NmaxArray; ii++){
+      for (ii = 0; ii<NmaxArray; ii++){
 
-	  (pG->GridOfRays[kp][ip]).Ray[ii].dl= (tmpCellIndexAndDisArray[ii]).dl;
+	(pG->GridOfRays[kp][ip]).Ray[ii].dl= (tmpCellIndexAndDisArray[ii]).dl;
 	  
-	  (pG->GridOfRays[kp][ip]).Ray[ii].i=(tmpCellIndexAndDisArray[ii]).i;	  
-	  (pG->GridOfRays[kp][ip]).Ray[ii].j=(tmpCellIndexAndDisArray[ii]).j;
-	  (pG->GridOfRays[kp][ip]).Ray[ii].k=(tmpCellIndexAndDisArray[ii]).k;
+	(pG->GridOfRays[kp][ip]).Ray[ii].i=(tmpCellIndexAndDisArray[ii]).i;	  
+	(pG->GridOfRays[kp][ip]).Ray[ii].j=(tmpCellIndexAndDisArray[ii]).j;
+	(pG->GridOfRays[kp][ip]).Ray[ii].k=(tmpCellIndexAndDisArray[ii]).k;
 
 	  
-	  //		   printf("NmaxArray= %d dl \n\n ", NmaxArray);	
-	} //over >GridOfRays = tmpCellIndexAndDisArray      				      
+	//		   printf("NmaxArray= %d dl \n\n ", NmaxArray);	
+      } //over >GridOfRays = tmpCellIndexAndDisArray      				      
 			      		
 	
-	l=0;
-	tau=0;
+      l=0;
+      tau=0;
 
-      } //ip    
+    } //ip    
   } //kp
 
 
     
   //printf(" ...........................\n\n");
 
-free(tmpCellIndexAndDisArray);
+  free(tmpCellIndexAndDisArray);
 
-
- /* for (kp=pG->ks; kp<=pG->ke; kp++){      */
- /*    for(ip=pG->is; ip<=pG->ie; ip++{	   */
- /* 	  ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc);  */
- /*      } */
- /*  } */
-
-
+  
+    /* for (kp=pG->ks; kp<=pG->ke; kp++){      */
+    /*    for(ip=pG->is; ip<=pG->ie; ip++{	   */
+    /* 	  ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc);  */
+    /*      } */
+    /*  } */
    
+    }
+
+void Constr_SegmentsFromRays(MeshS *pM, GridS *pG, int my_id){
+
+  int ig,ig_s,ig_e, kg,kg_s,kg_e, jg, je, ii_s,ii_e,ii, i,k;
+  int NumOfSegInBlock;
+  enum BCBufId Side;
+  enum WhereIAM {InBlock, OutBlock}InOutBlock;
+
+  RaySegmentGrid   *tmpRaySegGridPerBlock; /* temp array: we don't know how many segs per Block */ 
+
+  
+  
+  
+  ig_s = 0;
+  ig_e = pM->Nx[0]-1;     
+  kg_s = 0;
+  kg_e = pM->Nx[2]-1;
+
+
+  if(tmpRaySegGridPerBlock = (RaySegmentGrid**)calloc_1d_array(ig_e*kg_e, sizeof(RaySegmentGrid)))
+   ath_error("[calloc_1d] failed to allocate tmpRaySegGridPerBlock \n");
+
+  
+  jg = 0; /* rays must be in phi_j =const planes */
+  ii_s = -1; /* i.e. not yet detected */
+  ii_e = -1;  
+
+  
+  for (kg=kg_s; kg<=kg_e; kg++) {   // z
+    for (ig=ig_s; ig<=ig_e; ig++) { //R
+      InOutBlock=OutBlock;     
+      for (ii = 0; ii< pG->GridOfRays[kg][ig].len; ii++){
+      
+	i = pG->GridOfRays[kg][ig].Ray[ii].i;
+	k = pG->GridOfRays[kg][ig].Ray[ii].k;
+
+	Side=CheckCrossBlockBdry(i, k, my_id);
+  
+	if((Side==LS)||(Side==RS)||(Side==DS)||(Side==US)){
+	  switch (InOutBlock){    
+	  case (OutBlock):
+	    
+	    ii_s = ii;     
+
+	    tmpRaySegGridPerBlock[SegId].EnterSide=Side;
+	    
+	    InOutBlock = InBlock;
+	    NumOfSegInBlock +=1;	    
+	    break;
+	  case (InBlock):  
+	    ii_e = ii;
+
+	    tmpRaySegGridPerBlock[SegId].ExitSide=Side;
+	    
+	    break;
+	  default:      
+	    ath_error("Error in Constr_SegmentsFromRays");
+	  }
+	}
+	Side = NotOnSide;	
+      } /* ii-ray */
+      
+      if (InOutBlock == InBlock){
+	tmpRaySegGridPerBlock.id[0]=ig;
+	tmpRaySegGridPerBlock.id[1]=kg;	  
+      }    
+      
+    } //ig
+  } //kg
+
+  free(tmpRaySegGridPerBlock);
 }
 
+void AssignSegmentFromRay(GridS *pG, int i_Seg_s, int i_Seg_e, int i_RayDest, int k_RayDest){
+
+  int ii;
+
+  pG->RaySegGridPerBlock = (RayData**)calloc_2d_array(yglob_sz[2], yglob_sz[0], sizeof(RayData));
+  
+   (pG->GridOfRays[kp][ip]).Ray =
+  	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData));
+
+  /* for (ii = 0; ii< ; ii++){ */
+    
+  /* pG->GridOfRays[k_RayDest][i_RayDest].len */
+
+  /*   (pG->GridOfRays[kp][ip]).Ray = */
+  /* 	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData)); */
+
+
+printf("make sure to dealloc \n");
+
+}
+
+
+
+enum BCBufId CheckCrossBlockBdry(int i, int k, int my_id){
+   /* checks if the ray passes block side */
+  int is,ie,ks,ke;
+ 
+  is = BufBndr[my_id][0];
+  ie = BufBndr[my_id][3];
+  ks = BufBndr[my_id][2];
+  ke = BufBndr[my_id][5];  
+
+  if (i==is) return LS;
+  if (i==ie) return RS;
+  if (k==ks) return DS;
+  if (k==ke) return US;
+
+  return NotOnSide; /* default val */   
+}
 
 
 CellOnRayData *tmpCellIndexAndDisArray;
@@ -1781,6 +1893,8 @@ void problem(MeshS *pM, DomainS *pDomain)
 
 
   Constr_RayCastingOnGlobGrid(pM, pG, my_id); //mainly calc. GridOfRays
+
+  Constr_SegmentsFromRays(pM, pG, my_id);
 
   initGlobComBuffer(pM, pG);
 

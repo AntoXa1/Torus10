@@ -297,7 +297,7 @@ typedef struct RayData{
 
 int yglob_sz[3]; /* stores the size of the glob array in init_grid.c */
 
-typedef struct LocDatStructForRay{
+typedef struct LocDatStructForRay{ 
   /* Array on global mesh updated on a local node */
   float ro;
   float tau;
@@ -305,14 +305,29 @@ typedef struct LocDatStructForRay{
 
 /* ---------------- new course ------------- */
 
-typedef struct GridOFRaysOnGrid{
+enum BCBufId{LS, RS, DS, US, NotOnSide}; /* ids of left-,right, down- upper-sides */
+
+typedef struct RaySegment_Grid{
 //	data along the trajectory
-  //short len;  //index length
-  short ides, kdes;  /* destination cell indices on global index grid */
-  CellOnRayData  *Ray;  
-}GridOFRaysOnGrid;
+  short id[2];  /* id of the ray ==
+		     destination cell indices on global 2D-{R,Z} index grid */
+  short NmaxInSeg;
+  enum BCBufId EnterSide; //side of the Block where a segment starts
+  enum BCBufId ExitSide;  ////side of the Block where a segment ends
+  
+}RaySegmentGrid;
 
 
+
+
+typedef struct RaySegmentBuffer{
+  /* for syncing ray segments between MPI grids */
+  short *ray_id; //array of id of rays piercing current boundary
+  short data_size; 
+  float * data; // data to be transfered
+}RaySegmentBuffer;
+
+RaySegmentBuffer BCRayBuffer[4];
 
 #endif //XRAYS
 
@@ -398,7 +413,10 @@ typedef struct Grid_s{
 
   RayData **GridOfRays; //geometrical information in {R,z}
 
-  GridOFRaysOnGrid **RaysOnGrid; //geometrical information in {R,z} on a local Grid/one per MPI process
+  RaySegmentGrid   **RaySegGridPerBlock;
+  
+  //  GridOFRaysOnGrid **RaysOnGrid;
+  //geometrical information in {R,z} on a local Grid/one per MPI process
   
   
 #endif // XRAYS
