@@ -424,7 +424,8 @@ void restart_grids(char *res_file, MeshS *pM)
   fgets(line,MAXLEN,fp);
   if(strncmp(line,"USER_DATA",9) != 0)
     ath_error("[restart_grids]: Expected USER_DATA, found %s",line);
-  problem_read_restart(pM, fp);
+
+  problem_read_restart(pM, pG);
 
   fclose(fp);
 

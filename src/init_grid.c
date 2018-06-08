@@ -45,6 +45,7 @@ int checkOverlapTouch(SideS *pC1, SideS *pC2, SideS *pC3);
 
 void init_grid(MeshS *pM)
 {
+  
   DomainS *pD;
   GridS *pG;
   int nDim,nl,nd,myL,myM,myN;
@@ -71,6 +72,8 @@ void init_grid(MeshS *pM)
       pD = (DomainS*)&(pM->Domain[nl][nd]);  /* set ptr to Domain */
       pG = pM->Domain[nl][nd].Grid;          /* set ptr to Grid */
 
+      
+   
       pG->time = pM->time;
 
 /* get (l,m,n) coordinates of Grid being updated on this processor */
@@ -200,7 +203,9 @@ void init_grid(MeshS *pM)
       pG->eta_AD = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
       if (pG->eta_AD == NULL) goto on_error7;
 #endif /* RESISTIVITY */
+      // { printf("MPI breakpoint2, id= -1\n"); int mpi1= 1;  while(mpi1 == 1);}
 
+  
 /* Build 3D arrays related to Xray processing */
 // anton
 #ifdef XRAYS
@@ -210,27 +215,32 @@ void init_grid(MeshS *pM)
 
       //    optical depth array
       pG->tau_e = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
-      if (pG->tau_e == NULL) goto on_error_xrays_tau_e;
+      if (pG->tau_e == NULL) goto on_error_xrays_tau_e; 
 
-      //a      pG->disp = (Real***)calloc_3d_array(n3z, n2z, n1z, sizeof(Real));
-      //a if (pG->disp == NULL) goto on_error_xrays_disp;
-               
+      printf("=============init.c============= ==e %d %d %d \n", n3z, n2z, n1z);
+	     
       yglob_sz[0]= pM->Nx[0];     
       yglob_sz[1]= pM->Nx[1];
       yglob_sz[2]= pM->Nx[2];
-
-      /* yglob_sz[0]= 50;      */
-      /* yglob_sz[1]= 50; */
-      /* yglob_sz[2]= 50]; */
       
-
+   
+      
+#ifdef use_glob_vars 
       pG->yglob = (LocDatStructForRay***)calloc_3d_array(yglob_sz[2],yglob_sz[1],yglob_sz[0],
 							 sizeof(LocDatStructForRay));
       if (pG->yglob == NULL) goto on_error_xrays_yglob;
-
-      pG->GridOfRays = (RayData**)calloc_2d_array(yglob_sz[2], yglob_sz[0], sizeof(RayData));        
+#endif       
+       
+      pG->GridOfRays = (RayData**)calloc_2d_array(yglob_sz[2], yglob_sz[0], sizeof(RayData));
       if (pG->GridOfRays == NULL) goto on_error_xrays_GridOfRays;
-              
+
+      
+     /*  (pG->GridOfRays[0][0]).Ray = */
+    /* 	(CellOnRayData*)calloc_1d_array(3,sizeof(CellOnRayData)); */
+
+    /* { printf("MPI breakpoint2, id=%d \n", -2); int mpi1= 1;  while(mpi1 == 1);} */
+      
+   MPI_Barrier(MPI_COMM_WORLD);
       
 #endif /* XRAYS */
 
@@ -403,7 +413,6 @@ void init_grid(MeshS *pM)
       if (pG->NCGrid > 0) {
         pG->CGrid =(GridOvrlpS*)calloc_1d_array(pG->NCGrid, sizeof(GridOvrlpS));
         if(pG->CGrid==NULL) ath_error("[init_grid]:failed to allocate CGrid\n");
-
         for (ncg=0; ncg<pG->NCGrid; ncg++){
           for (dim=0; dim<6; dim++) {
             pG->CGrid[ncg].myFlx[dim] = NULL;
@@ -1174,17 +1183,23 @@ G3.ijkl[2],G3.ijkr[2]);
     on_error_xrays_tau_e:
 		free_3d_array(pG->tau_e);
     on_error_xrays_GridOfRays:
-                free_3d_array(pG->GridOfRays);		
+                free_3d_array(pG->GridOfRays);
+		 ath_error("[init_grid]:on_error_xrays_GridOfRays\n");
 		//a    /* on_error_xrays_disp: */
     /* 		free_3d_array(pG->disp); */
 
-    on_error_xrays_yglob:
+ on_error_xrays_yglob:
 
-		free_3d_array(pG->yglob);
-
+		;
+		  
+#ifdef use_glob_vars 
+ free_3d_array(pG->yglob);
+#endif 
 		
 #endif
-}
+
+      }
+
 
 #ifdef STATIC_MESH_REFINEMENT
 /*=========================== PRIVATE FUNCTIONS ==============================*/

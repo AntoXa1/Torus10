@@ -2336,12 +2336,10 @@ static void pack_ix1(GridS *pG)
   for (k=ks; k<=ke; k++){
     for (j=js; j<=je; j++){
       for (i=is; i<=is+(nghost-1); i++){
-
-    	  	*(pSnd++) = pG->U[k][j][i].d;
+    	*(pSnd++) = pG->U[k][j][i].d;
         *(pSnd++) = pG->U[k][j][i].M1;
         *(pSnd++) = pG->U[k][j][i].M2;
         *(pSnd++) = pG->U[k][j][i].M3;
-
 #ifndef BAROTROPIC
         *(pSnd++) = pG->U[k][j][i].E;
 #endif /* BAROTROPIC */
