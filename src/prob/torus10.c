@@ -10,6 +10,7 @@
 
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <time.h>
 
@@ -17,10 +18,8 @@
 #include "athena.h"
 #include "globals.h"
 #include "prototypes.h"
-
-
+#include<limits.h> 
 //****************************************
-
 #ifdef MPI_PARALLEL
 
 //#define DBG_MPI_OPT_STACK //mpi "breakpoint" while loops
@@ -31,6 +30,10 @@
 
 //#define RADIAL_RAY_TEST
 //#define SOLOV
+
+//#define tau_sync_small_buf
+//#define mpi_opt_depth_test1
+
 
 //****************************************
 /* make all MACHINE=macosxmpi */
@@ -45,7 +48,7 @@ void aplot(MeshS *pM, int is, int js, int ks, int ie, int je, int ke, char name[
 
 
 /* void aplot(GridS *pG, int is, int ie, int js, int je, int ks, int ke); */
-//void plot(MeshS *pM, char name[16]);
+// void plot(MeshS *pM, char name[16]);
 static void calcProblemParameters();
 static void printProblemParameters();
 
@@ -59,8 +62,34 @@ float rf(float x, float y, float z);
 
 void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id);
 // void optDepthStack(MeshS *pM, GridS *pG);
+
+void findSegmPartitionFromRay(GridS *pG, RayData GridOfRays, int,int, RaySegment* tmpSegGrid, int* NumSeg,
+			      int* tmp_mpiIdVec,
+			      int NumMPIBlocks, int my_id);
+
+void findSegmPartitionFromRayForBlock(GridS *pG, RayData GridOfRays,
+			      int,int, RaySegment* tmpSegGrid, int* NumSeg,
+			      int* tmp_mpiIdVec,
+			      int NumMPIBlocks, int my_id);
+
+
+
+
 void Constr_SegmentsFromRays(MeshS *pM, GridS *pG, int);
-enum BCBufId CheckCrossBlockBdry(int i, int k, int my_id);
+
+void SearchBufId(int i, int k, int NumMpiBlocks, int* id_res);
+  
+enum BCBufId CheckCrossBlockBdry(int i, int k, int *my_id);
+
+
+void testSegments1(GridS *pG, int ip, int kp, RaySegment* tmpSegGrid, int);
+void testSegments2(MeshS *pM, GridS *pG, int my_id, int);
+
+void OptDepthAllSegBlock(GridS *pG);
+void CalcParallelOdepthData(GridS *pG, int my_id);
+  
+
+
   
 void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id);
 void ionizParam(const MeshS *pM, GridS *pG);
@@ -90,10 +119,10 @@ void calcFFT();
 /* ============================================================================= */
 void testRayTracings( MeshS *pM, GridS *pG);
 void traceGridCell(GridS *pG, Real *res, int ijk_cur[3], Real xpos[3], Real* x1x2x3, const Real
-		   cartnorm[3], const Real cylnorm[3], short*);
+		   cartnorm[3], const Real cylnorm[3], int*);
 void traceGridCellOnGlobGrid(MeshS *pM,GridS *pG, Real *res, int *ijk_cur, Real *xyz_pos,
 			     Real* rtz_pos, const Real *cart_norm, const Real *cyl_norm,			    
-			     short* nroot);
+			     int* nroot);
 void coordCylToCart(Real*, const Real*,const Real, const Real );
 void cartVectorToCylVector(Real*, const Real*, const Real, const Real);
 void vectBToA(Real*, const Real*, const Real*);
@@ -109,23 +138,28 @@ void ijkLocToGlob(const GridS *pG, const int iloc, const int jloc,const int kloc
 
 void ijkGlobToLoc(const GridS *pG, const int iglob, const int jglob, const int kglob, int *iloc, int *jloc, int *kloc);
 
-int celli_Glob(const MeshS *pM, const Real x, const Real dx1_1, int *i, Real *a, const Real is);
-int cellj_Glob(const MeshS *pM, const Real y, const Real dx2_1, int *j, Real *b,const Real js);
-int cellk_Glob(const MeshS *pM, const Real z, const Real dx3_1, int *k, Real *c, const Real ks);
+int celli_Glob(const MeshS *pM, const Real x, const Real dx1_1, int *i, Real *a, const int is);
+int cellj_Glob(const MeshS *pM, const Real y, const Real dx2_1, int *j, Real *b, const int js);
+int cellk_Glob(const MeshS *pM, const Real z, const Real dx3_1, int *k, Real *c, const int ks);
 
+ /* subroutines related to Ray object on global grid */
 void initGlobComBuffer(const MeshS *pM, const GridS *pG );
 void AllocateSendRecvGlobBuffers(const MeshS *pM, const GridS *pG);
-void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do);
+/* void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do); */
 
+#ifdef use_glob_vars
+void SyncGridGlob(MeshS *pM, GridS *pG, int W2Do);
 static void packGridForGlob(MeshS *pM, GridS *pG, int* my_id, int W2Do);
 static void packGlobBufForGlobSync(MeshS *pM, GridS *pG, int* myid, int W2Do);
-
 static void unPackAndFetchToGlobGrid(MeshS *pM, GridS *pG, int* ext_id, int W2Do);
 static void unPackGlobBufForGlobSync(MeshS *pM, GridS *pG, int* ext_id, int W2Do);
+#endif
 
 void freeGlobArrays();
 
-int  mpi1=1;
+/* int  mpi1=1; */
+int NumSegBlock_glb=0;
+static int my_id_glob=-1;
 
 // Input parameters
 static Real q, r0, r_in, rho0, e0, dcut, beta, seed, R_ib;
@@ -179,9 +213,16 @@ int ID_TAU = 1;
 #ifdef MPI_PARALLEL
 /* MPI send and receive buffers */
 int  BufSize, BufSizeGlobArr, ibufe, jbufe, kbufe, **BufBndr, NumDomsInGlob; //sizes of global buffer 
+
+#ifdef use_glob_vars 
 static double **send_buf = NULL, **recv_buf = NULL,
   **send_buf_big = NULL, **recv_buf_big = NULL;
+#endif 
+
 static MPI_Request *recv_rq, *send_rq;
+
+float *send_1d_buf=NULL,  *recv_1d_buf=NULL;
+
 #endif
 
 
@@ -214,7 +255,7 @@ void apause(){
 
 
 #ifdef MPI_PARALLEL
-
+#ifdef use_glob_vars 
 void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   /* by the time this function is executed, density must be synced on global grid */
   
@@ -283,38 +324,38 @@ void optDepthStackOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 
 }
 #endif
-
+#endif
 
 void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
  
   // it is assumed that the source is located on the axis of symmetry
 
 
-  Real x1is, x2js, x3ks, den,  ri, tj, zk,x1,x2,x3,
+  Real x1is, x2js, x3ks, den, ri, tj, zk,x1,x2,x3,
     l,dl,tau=0,dtau=0 ;
    
   int i,j,k,is,ie,js,je,ks,ke,ip,jp,kp,iloc,jloc,kloc,
     knew,ii;
 
-  Real abs_cart_norm, cart_norm[3], cyl_norm[3], xyz_src[3], xyz_pos[3], rtz_pos[3],rtz_in[3], xyz_p[3],
+  Real abs_cart_norm, cart_norm[3], cyl_norm[3], xyz_src[3], xyz_pos[3],
+    rtz_pos[3],rtz_in[3], xyz_p[3],
     res[1], olpos[3],xyz_cc[3], rtz_cc[3];
-  int ijk_cur[3],iter,iter_max,lr,ir=0,i0,j0,k0,
-    NmaxArray=1;
-  short nroot;
-  Real xyz_in[3], radSrcCyl[3], dist, sint, cost, s2;
+  int ijk_cur[3],iter,iter_max,lr,i0,j0,k0,
+    NmaxArray=0;
+  int nroot;
+  Real xyz_in[3], radSrcCyl[3], dist, sint, cost, s2,ir=0;
     
   //    CellOnRayData arrayDataTmp; //indices, ijk and dl
   //    int tmpIntArray1, *tmpIntArray2, *tmpIntArray3;
 
   CellOnRayData *tmpCellIndexAndDisArray;
   Real *tmpRealArray;
-
-  short ncros;
-
-
+  int ncros;
   int  mpi1=1;
 
-
+  
+ 
+  
   is = 0;
   ie = pM->Nx[0]-1;
 
@@ -324,9 +365,9 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   ks = 0;
   ke = pM->Nx[2]-1;
 
-
+  /* printf("ke = pM->Nx[2] = %d \n", pM->Nx[2]); */
   
-  iter_max= sqrt(pow(ie,2) + pow(je,2) +pow(ke,2));
+  iter_max= 5*sqrt(pow(ie,2) + pow(je,2) +pow(ke,2));
 
   //  allocating temporary array for 1D ray from point source
   //  CellIndexAndCoords
@@ -342,16 +383,10 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 
 
   jp = js;
-
-
-  /* while( mpi1==1 ); */
-
-  /* int id1,id2,id3; */
-  /* get_myGridIndex() */
 		
   for (kp = ks; kp <= ke; kp++) { //z
     for (ip = is; ip <= ie; ip++) { //r
-
+      NmaxArray =0;
 #ifndef MPI_PARALLEL /* if Not parallel */
       ath_error("[Constr_RayCastingOnGlobGrid] is not working in parallel\n");
       /* pG->yglob[kp][jp][ip].ro = pG->U[kloc][jloc][iloc].d; */
@@ -434,8 +469,18 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
       tau = 0;
       dtau=0;
 
-      for (iter=0; iter<=iter_max; iter++){
-
+      // zero element
+      iter=0;
+      (tmpCellIndexAndDisArray[iter]).dl = dl;
+      (tmpCellIndexAndDisArray[iter]).i = ijk_cur[0];
+      (tmpCellIndexAndDisArray[iter]).j = ijk_cur[1];
+      (tmpCellIndexAndDisArray[iter]).k = ijk_cur[2];
+      NmaxArray += 1;
+      
+      for (iter=1; iter<=iter_max; iter++){
+	/* test if  already in ip,kp */
+	if( (ijk_cur[0]==ip  &&  ijk_cur[2]==kp)) break;
+	
 	s2 = pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+pow(xyz_p[2]-xyz_pos[2],2);
 	olpos[0]=xyz_cc[0];
 	olpos[1]=xyz_cc[1];
@@ -467,60 +512,37 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 	dl = sqrt(pow(xyz_cc[0]-olpos[0],2)+pow(xyz_cc[1]-olpos[1],2)+
 		  pow(xyz_cc[2]-olpos[2],2));
 
-	/* dl = sqrt( pow(pG->dx1,2)  +  pow(pG->dx3,2) ); */
-
 	(tmpCellIndexAndDisArray[iter]).dl = dl;
 	(tmpCellIndexAndDisArray[iter]).i = ijk_cur[0];
-
-	// (tmpCellIndexAndDisArray[iter]).j = jp;
-
-	(tmpCellIndexAndDisArray[iter]).j = ijk_cur[1];
-
-	  
-	/* if ((my_id == 1) && (ip==62) && (kp==14)) { */
-	/*      while(mpi1 == 1 );	     	   */
-	/*  } */
-	  
+	(tmpCellIndexAndDisArray[iter]).j = ijk_cur[1];	  
 	(tmpCellIndexAndDisArray[iter]).k = ijk_cur[2];
 
 	l += dl;
-       
-	  
+       	  
 	NmaxArray = iter+1; //To use in allocation
 
 	if (pow(xyz_p[0]-xyz_pos[0],2)+pow(xyz_p[1]-xyz_pos[1],2)+
 	    pow(xyz_p[2]-xyz_pos[2],2)>s2){
 	    
-	  //			tau= 0;
-
-	  break;
+	  //  tau= 0;
+	  //  break;
 	}
 		 
-
 	/* test if reached to the ip,jp,kp */
-	if( (ijk_cur[0]==ip  &&  ijk_cur[2]==kp)
-	    /* if( (ijk_cur[0]==ip &&  ijk_cur[2]==kp) */
-	    /* || (ijk_cur[]==ip &&  ijk_cur[1]==jp &&  ijk_cur[2]==kp) */
-	    ){
-	  // cc_pos(pG, ijk_cur[0], ijk_cur[1], ijk_cur[2], &x1, &x2, &x3);
-
-	  break;
-	}		  
-
+	if( (ijk_cur[0]==ip  &&  ijk_cur[2]==kp)) break;
 
       } //iter
-
-
-
 	
-	//pG->GridOfRays should be already allocated at init_grid.c
+      //pG->GridOfRays should be already allocated at init_grid.c
+      //{ printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}
+
+      /* printf("%d %d %d \n", NmaxArray, ip, jp); */
+      /* { printf("MPI breakpoint2, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}	      */
 
       (pG->GridOfRays[kp][ip]).Ray =
 	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData));
-
-      (pG->GridOfRays[kp][ip]).len = NmaxArray;
-
-      pG->tau_e[kp][jp][ip] = 0;
+      
+      (pG->GridOfRays[kp][ip]).len = NmaxArray;      
       
       for (ii = 0; ii<NmaxArray; ii++){
 
@@ -533,7 +555,9 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
 	  
 	//		   printf("NmaxArray= %d dl \n\n ", NmaxArray);	
       } //over >GridOfRays = tmpCellIndexAndDisArray      				      
-			      		
+
+      int mpi=1;
+      //while((mpi==1) && (my_id==1) && (ip==9));
 	
       l=0;
       tau=0;
@@ -541,9 +565,7 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
     } //ip    
   } //kp
 
-
-    
-  //printf(" ...........................\n\n");
+      
 
   free(tmpCellIndexAndDisArray);
 
@@ -555,110 +577,1168 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
     /*  } */
    
     }
-
 void Constr_SegmentsFromRays(MeshS *pM, GridS *pG, int my_id){
-
-  int ig,ig_s,ig_e, kg,kg_s,kg_e, jg, je, ii_s,ii_e,ii, i,k;
-  int NumOfSegInBlock;
-  enum BCBufId Side;
-  enum WhereIAM {InBlock, OutBlock}InOutBlock;
-
-  RaySegmentGrid   *tmpRaySegGridPerBlock; /* temp array: we don't know how many segs per Block */ 
-
+  /*! breaks the grid of rays, obtained from global grid into individual segments
+    belonging to a particular MPI Block = Grid */
   
+  int ig,ig_s,ig_e, kg,kg_s,kg_e, jg, je,ii, i,k,NumSeg=0;
+  int NumOfSegInBlock,NumMPIBlocks,cur_id,pr_id,mpi1;
+
+  int *tmp_mpiIdVec;        //tmp stores mpi ids of segments
   
-  
+  /* enum SegmentType *tmp_SegType;   //tmp stores array of segments type  */
+
+  RaySegment *tmpSegGrid; /* temp array: we don't know how many segs per Block */ 
+  /*   temporary arrays are needed because we don't know how 
+       many ray segments are crossing a given MPI Block; 1) we allocate enough space; 
+       then copy the results to a perm structure of segments and deallocate tmp structures; */
   ig_s = 0;
-  ig_e = pM->Nx[0]-1;     
+  ig_e = pM->Nx[0]-1;;
   kg_s = 0;
-  kg_e = pM->Nx[2]-1;
+  kg_e = pM->Nx[2]-1;;
+  
+  MPI_Comm_size(MPI_COMM_WORLD, &NumMPIBlocks);
+  
+  int N = (ig_e-ig_s)*(kg_e-kg_s);
+  int N2 = 2*N;
+ 
 
+  /* printf("N22 = N2 * N2, %d %d\n", N22, N); */
+  /* printf("int %%d %d %d to %d \n",   */
+  /* 	 sizeof(int),INT_MIN,INT_MAX); */
+  
+   if( (tmp_mpiIdVec = (int*)calloc_1d_array(N2, sizeof(int)))==NULL)    
+      ath_error("[calloc_1d] failed to allocate mpiIdVec \n");
 
-  if(tmpRaySegGridPerBlock = (RaySegmentGrid**)calloc_1d_array(ig_e*kg_e, sizeof(RaySegmentGrid)))
-   ath_error("[calloc_1d] failed to allocate tmpRaySegGridPerBlock \n");
+   //{ printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}
+ 
+    if( (tmpSegGrid = (RaySegment*)calloc_1d_array(N2, sizeof(RaySegment)))==NULL)
+      ath_error("[calloc_1d] failed to allocate tmpRaySegGridPerBlock \n");
 
+  /* (pG->RaySegGridPerBlock) = */
+  /*     (RaySegment*)calloc_1d_array(NumSegBlock_glb,sizeof(RaySegment)); */
   
   jg = 0; /* rays must be in phi_j =const planes */
-  ii_s = -1; /* i.e. not yet detected */
-  ii_e = -1;  
-
+  NumSegBlock_glb = 0;  
   
   for (kg=kg_s; kg<=kg_e; kg++) {   // z
     for (ig=ig_s; ig<=ig_e; ig++) { //R
-      InOutBlock=OutBlock;     
-      for (ii = 0; ii< pG->GridOfRays[kg][ig].len; ii++){
       
-	i = pG->GridOfRays[kg][ig].Ray[ii].i;
-	k = pG->GridOfRays[kg][ig].Ray[ii].k;
+      for(int m=0; m<N2; m++) tmp_mpiIdVec[m]=-1; //i.e. default is no-Id       
+      NumSeg=0;           
 
-	Side=CheckCrossBlockBdry(i, k, my_id);
+      findSegmPartitionFromRayForBlock(pG, pG->GridOfRays[kg][ig], ig,kg,
+			       tmpSegGrid, &NumSeg, tmp_mpiIdVec,
+			       NumMPIBlocks, my_id);
+
+      NumSegBlock_glb += NumSeg; //increase only if my_block is crossed 
+
+    } //ig
+  } //kg
+  /* partition of the GridOfRays structure array into segments done */
+
+
+#ifdef save_memory /* free some memory */
+  {
+    int is = 0;
+    int ie = pM->Nx[0]-1;
+    int js = 0;
+    int je = pM->Nx[1]-1;       
+    int ks = 0;
+    int ke = pM->Nx[2]-1;
+    for (int kp = ks; kp<=ke; kp++) { //z
+      for (int ip = is; ip<=ie; ip++) { //r
+	free_1d_array((pG->GridOfRays[kp][ip]).Ray);
+      }
+    }
+
+    free_2d_array(pG->GridOfRays);
+  } 
+#endif
+ 
   
-	if((Side==LS)||(Side==RS)||(Side==DS)||(Side==US)){
-	  switch (InOutBlock){    
-	  case (OutBlock):
-	    
-	    ii_s = ii;     
+   /* mpi1=1; */
+   /* while(mpi1==1); */
 
-	    tmpRaySegGridPerBlock[SegId].EnterSide=Side;
-	    
-	    InOutBlock = InBlock;
-	    NumOfSegInBlock +=1;	    
-	    break;
-	  case (InBlock):  
-	    ii_e = ii;
-
-	    tmpRaySegGridPerBlock[SegId].ExitSide=Side;
-	    
-	    break;
-	  default:      
-	    ath_error("Error in Constr_SegmentsFromRays");
-	  }
-	}
-	Side = NotOnSide;	
-      } /* ii-ray */
+ 
+  
+  { //#2 copy temporary rays to perm structure   
+    (pG->RaySegGridPerBlock) =
+      (RaySegment*)calloc_1d_array(NumSegBlock_glb,sizeof(RaySegment));
+    
+    for(int l = 0; l <  NumSegBlock_glb; l++){
       
-      if (InOutBlock == InBlock){
-	tmpRaySegGridPerBlock.id[0]=ig;
-	tmpRaySegGridPerBlock.id[1]=kg;	  
-      }    
+      if(((pG->RaySegGridPerBlock)[l].data=
+	  (SegmentData*)calloc_1d_array(tmpSegGrid[l].data_len,sizeof(SegmentData)))==NULL)	
+	ath_error("[calloc_1d] failed to allocate (pG->RaySegGridPerBlock) \n");
+
+     
+       
+      (pG->RaySegGridPerBlock)[l].data_len=tmpSegGrid[l].data_len;
+
+      (pG->RaySegGridPerBlock)[l].type=tmpSegGrid[l].type;
+
+      /* if(my_id==0) printf("l= %d %d %d \n", l, (pG->RaySegGridPerBlock)[l].type, */
+      /* 			  tmpSegGrid[l].type); */
+      
+      for(int b=0; b<4; b++) pG->RaySegGridPerBlock[l].head_block[b] =
+			       tmpSegGrid[l].head_block[b];
+                  
+      for(int m=0; m < (pG->RaySegGridPerBlock)[l].data_len; m++){
+
+	/* printf("\n (l,m)=(%d %d) \n", l, m); */	
+	(pG->RaySegGridPerBlock)[l].data[m].i = tmpSegGrid[l].data[m].i;
+	(pG->RaySegGridPerBlock)[l].data[m].k = tmpSegGrid[l].data[m].k;
+	(pG->RaySegGridPerBlock)[l].data[m].dl = tmpSegGrid[l].data[m].dl;
+
+	/* allocate tmp MPI connection array */	
+	if( pG->RaySegGridPerBlock[l].type == Head){
+
+	  int sz = (pG->RaySegGridPerBlock)[l].MPI_idConnectArray_size=
+	    tmpSegGrid[l].MPI_idConnectArray_size;
+	  	  
+	  if((pG->RaySegGridPerBlock[l].MPI_idConnectArray=
+	      (int*)calloc_1d_array(sz, sizeof(int)))==NULL)
+	    ath_error("[Constr_SegmentsFromRays] failed to allocate MPI_idConnectArray)\n");
+
+	  //{printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}
+
+	  /* copy MPI connection array to tmp structure */
+	  for(int impi=0; impi <= sz-1; impi++)
+	    pG->RaySegGridPerBlock[l].MPI_idConnectArray[impi]=tmp_mpiIdVec[impi];	 
+	}   
+
+      } //m-loop      
+
+      { //allocate dtau, phi array
+	int js =  BufBndr[my_id][1];
+	int je = BufBndr[my_id][4] ;
+	int phi_sz = je-js+1;
+
+	/* if( pG->RaySegGridPerBlock[l].type == Upstr ){
+
+	  /* printf("alloc: l= %d phi_sz=, %d %d %d %d \n", l, phi_sz, js, je, */
+	  /* 	 pG->RaySegGridPerBlock[l].type); */
+	  
+	  /* tau_phi array exists only for segments which pass through */
+
+	  pG->RaySegGridPerBlock[l].dat_vec_1d_size = phi_sz;
+
+	  if(( pG->RaySegGridPerBlock[l].dat_vec_1d=
+	     (float*)calloc_1d_array(phi_sz,sizeof(float)))==NULL)
+	  ath_error("[calloc_1d] failed to allocate (pG->RaySegGridPerBlock)[l].d_tau \n");  
+	
+      }
+      
+    } // l-loop    
+  }// #2
+
+  /* if(my_id==0)  */
+  /* for(int l = 0; l <  NumSegBlock_glb; l++) */
+  /*  printf("laft= %d %d %d \n", l, (pG->RaySegGridPerBlock)[l].type, */
+  /* 			  tmpSegGrid[l].type); */
+  /* mpi1=1; */
+  /* while(mpi1==1); */
+
+  
+   
+  { //deallocating large tmp segment structure
+    for(int l=0;l<=N2-1;l++){
+      //      if(tmpSegGrid[l].type==Head) free(tmp_mpiIdVec);
+      free(tmpSegGrid[l].data);
+    }
+    free(tmp_mpiIdVec);
+    free(tmpSegGrid);  //down the road make sure to proper3ly
+    printf("\n %d deallocating large tmp segment structure done ..\n",my_id);
+  }
+ 
+ 
+  
+  {//constructs mask array       
+    int N2 = pM->Nx[0]*pM->Nx[2];
+    if(( pG->BlockToRaySegMask=
+	 (int**)calloc_2d_array(pM->Nx[2], pM->Nx[0],sizeof(int)))==NULL)
+      ath_error("[calloc_2d] failed to allocate pG->RaySegMask \n");
+
+    int ig_s = BufBndr[my_id][0];
+    int ig_e = BufBndr[my_id][3];
+    int kg_s = BufBndr[my_id][2];
+    int kg_e = BufBndr[my_id][5];
+    
+    for(int kp=kg_s; kp<=kg_e; kp++){
+      for(int ip=ig_s; ip<=ig_e; ip++){
+
+    	int l1, dlen, i,k,l;
+	
+    	for (int l=0; l < NumSegBlock_glb; l++){
+	  
+   	  dlen = (pG->RaySegGridPerBlock)[l].data_len;
+	  
+	  i = (pG->RaySegGridPerBlock)[l].data[dlen-1].i;	  
+    	  k = (pG->RaySegGridPerBlock)[l].data[dlen-1].k;
+	  
+	  if ((i==ip) && (k==kp) && (pG->RaySegGridPerBlock[l].type==Head)){	    
+	    l1 = l;
+	    break;
+	  }
+	  else{
+	    l1=-1;
+	  }
+    	}
+
+    	if(l1==-1){
+	  mpi1=1;
+	  while(mpi1==1);
+
+	  printf("(pG->RaySegGridPerBlock)[l].type= %d \n",(pG->RaySegGridPerBlock)[l].type);
+	  printf("id:%d, is:%d,ie:%d, ks:%d,ke:%d\n",my_id, ig_s,ig_e,kg_s,kg_e);
+	  printf("id:%d (l-1:%d), (dlen:%d),(ip,kp:%d,%d), (i,k: %d,%d) , (l1:%d)\n",
+		 my_id, l, dlen, ip,kp, i,k, l1);
+    	  ath_error("could not fill pG->BlockToRaySegMask");
+    	}
+    	else {
+    	  pG->BlockToRaySegMask[kp][ip]=l1;
+    	}	
+      }
+    }        
+  }//ends mask array
+
+   
+  //test
+  /* testSegments2(pM, pG, my_id, 2);     */
+  //  printf("\n ********** testSegments2 id: %d *********** \n",  my_id);
+
+     
+  /* mpi1=1; */
+  /* while(mpi1==1); */  
+}
+
+
+void OptDepthAllSegBlock(GridS *pG){  
+
+  /* int mpi1=1; */
+  /* while(mpi1==1);  */
+  
+  int phi_sz =  BufBndr[my_id_glob][4] - BufBndr[my_id_glob][1]+1;
+   
+  for(int l=0; l < NumSegBlock_glb; l++){
+
+    Real dat=0.;
+    Real den = 1;    
+    Real tau0 = Rsc*Dsc*KPE;
+        
+    int sz =  pG->RaySegGridPerBlock[l].dat_vec_1d_size;
+
+    for(int m = 0; m < sz; m++) {
+
+      dat =0;
+      for(int n=0; n <(pG->RaySegGridPerBlock)[l].data_len; n++){     
+
+ 		
+	int i = pG->RaySegGridPerBlock[l].data[n].i;
+	int k = pG->RaySegGridPerBlock[l].data[n].k;
+
+	int iloc, jloc, kloc;     
+	ijkGlobToLoc(pG, i, m, k, &iloc, &jloc, &kloc);
+		
+	den = pG->U[kloc][jloc][iloc].d;
+
+	Real dtau = (pG->RaySegGridPerBlock)[l].data[n].dl*den;
+	  
+	dat += dtau;
+	
+	
+#ifndef mpi_opt_depth_test1	
+	/* dat *= den; */
+#endif
+	
+      }
+
+#ifndef mpi_opt_depth_test1
+
+
+      pG->RaySegGridPerBlock[l].dat_vec_1d[m] = tau0*dat;
+
+      
+#else
+      pG->RaySegGridPerBlock[l].dat_vec_1d[m] = dat;
+      
+#endif
+      
+      /* pG->yglob[k][m][i].tau = pG->RaySegGridPerBlock[l].dat_vec_1d[m]; */
+      /* pG->tau_e[kloc][jloc][iloc] = */
+      
+    }
+  } 
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  
+}
+
+void findSegmPartitionFromRayForBlock(GridS *pG, RayData GridOfRays,int ig,int kg,
+			      RaySegment* tmpSegGrid,
+			      int* NumSeg,
+			      int* tmp_mpiIdVec,
+			      int NumMPIBlocks, int my_id){
+  int ii,i,j,k,ip,cur_id,prev_id,fut_id,orig_id,is_s,is_e;
+
+  *NumSeg = 0;
+   
+  cur_id = -1;
+  prev_id = -1;
+  fut_id = -1;
+  orig_id = -1;
+  
+  int n_seg=0;
+  /* NumSeg is number of segments crossing Block; n_seg is number of segments in a ray */
+  /* segment is a part of a ray that belongs to an MPI block */
+
+  int mpi1=1;  
+
+   /* while((mpi1==1) && (my_id==0) && (ig==1)); */
+  
+  SearchBufId(ig, kg, NumMPIBlocks, &orig_id);
+  
+  for (ii = 0; ii< GridOfRays.len; ii++){
+  
+    SearchBufId(GridOfRays.Ray[ii].i, GridOfRays.Ray[ii].k, NumMPIBlocks, &cur_id);
+
+    /* look ahead */
+    if (ii< GridOfRays.len-1){
+      SearchBufId(GridOfRays.Ray[ii+1].i, GridOfRays.Ray[ii+1].k, NumMPIBlocks, &fut_id);
+    }
+
+    if(prev_id != cur_id){
+
+      tmp_mpiIdVec[n_seg]=cur_id;    
+      n_seg+=1;
+      
+      if (cur_id==my_id){ //first cell of my_id block      
+	is_s=ii;	 
+	*NumSeg += 1;
+      }	
+      prev_id = cur_id;
+    }
+
+    if((cur_id==my_id) && (fut_id!=cur_id)||(ii==GridOfRays.len-1)){
+      //last cell of my_id block
+      is_e = ii;
+      break;
+    }    
+    }//eof iteration over a ray(ig,kg)
+
+  if (*NumSeg==1){/* this condition simply means that there IS as segment here since some */
+    /* Rays may not cross this Block(my_id) */
+    
+    int seg_i = NumSegBlock_glb; //i.e. + 1 -1
+
+    tmpSegGrid[seg_i].head_block[0] = orig_id;
+    tmpSegGrid[seg_i].head_block[1] = ig;
+    tmpSegGrid[seg_i].head_block[3] = kg;
+
+    /* printf("my_id=%d, orig_id=%d \n", my_id, orig_id); */
+    
+    if (orig_id==my_id){
+      
+      tmpSegGrid[seg_i].type = Head;
+      tmpSegGrid[seg_i].MPI_idConnectArray_size = n_seg;
+
+      int sz = tmpSegGrid[seg_i].MPI_idConnectArray_size;
+      
+      /* printf("alloc id,ig,kg, seg_i,sz %d %d %d \n", my_id, ig, kg, seg_i, sz); */
+      /* allocate tmp MPI connection array */     
+      
+      if( (tmpSegGrid[seg_i].MPI_idConnectArray=
+	   (int*)calloc_1d_array(sz,sizeof(int)))==NULL){
+        ath_error("failed to allocate tmpSegGrid[seg_i].MPI_idConnectArray\n");
+      }
+      
+    }
+    else{
+      tmpSegGrid[seg_i].type = Upstr;
+      tmpSegGrid[seg_i].MPI_idConnectArray_size = 0;
+    }
+
+    tmpSegGrid[seg_i].data_len = is_e-is_s+1;
+    
+    if( (tmpSegGrid[seg_i].data=
+	 (SegmentData*)calloc_1d_array(tmpSegGrid[seg_i].data_len,
+				       sizeof(SegmentData)))==NULL)
+      ath_error("[calloc_1d] failed to allocate findSegmPartitionFromRayForGrid, 1 \n");
+
+    for(ip = is_s; ip<= is_e; ip++){ //is_s and is_e are in the Ray structure
+      int l = ip - is_s;
+     
+      tmpSegGrid[seg_i].data[l].i = GridOfRays.Ray[ip].i;
+      tmpSegGrid[seg_i].data[l].k = GridOfRays.Ray[ip].k;
+      tmpSegGrid[seg_i].data[l].dl = GridOfRays.Ray[ip].dl;
+    }    
+  }
+        
+  }
+
+
+void SendSegmentData(int Send1Recv0, int dest_id, float* dat_vec_1d, int phi_sz, int* head_block){
+   /* not working correctly */
+  /* call with:  SendSegmentData(1, dest_id, pG->RaySegGridPerBlock[l].dat_vec_1d, phi_sz, */
+  /* 	 		 pG->RaySegGridPerBlock[l].head_block */
+  /* 	 		 ); */
+
+     
+     //Create MPI datatype
+      MPI_Request request;
+      int tag_send = 1;
+      
+      const int nblocks = 2;
+
+      int blocklengths[2] = {4, phi_sz};
+      
+      MPI_Datatype types[2] = {MPI_INT, MPI_FLOAT};      
+      MPI_Datatype mpi_seg_data;      
+      MPI_Aint offsets[3];
+
+      offsets[0] = offsetof(SegmSendRecv, id_ijk);
+      offsets[1] = offsetof(SegmSendRecv, dat_vec);
+
+/* int mpi1=1; */
+/*    while(mpi1==1); */
+      
+      SegmSendRecv SegSendBuf, SegRecvBuf;
+      
+      
+      if( (SegSendBuf.dat_vec = (float*)calloc_1d_array(phi_sz, sizeof(float)))==NULL)
+        ath_error("[calloc_1d] failed to allocate dat_vec \n");
+
+      if( (SegRecvBuf.dat_vec = (float*)calloc_1d_array(phi_sz, sizeof(float)))==NULL)
+        ath_error("[calloc_1d] failed to allocate dat_vec \n");
+
+      MPI_Type_create_struct(nblocks, blocklengths, offsets, types, &mpi_seg_data);
+
+      MPI_Type_commit(&mpi_seg_data);
+      
+      
+      MPI_Status status;
+      
+      switch (Send1Recv0){
+      case (1):
+	for(int i=0; i<4; i++) SegSendBuf.id_ijk[i] = head_block[i];
+	for(int i=0; i<phi_sz; i++) SegSendBuf.dat_vec[i]=dat_vec_1d[i]=my_id_glob+100;
+	  
+	/* printf("%d %d %d \n", head_block[1],head_block[2],head_block[3]); */
+
+	int ierr = MPI_Isend(&SegSendBuf, 1, mpi_seg_data, dest_id, tag_send,
+			     MPI_COMM_WORLD, &request);
+
+	/* printf("send %d to %d \n",my_id_glob, dest_id); */
+	/* for(int i=0; i<phi_sz; i++) printf("%f \n", SegSendBuf.dat_vec[i]); */
+
+	break;
+      case (0):
+
+	MPI_Recv(&SegRecvBuf, 1, mpi_seg_data, MPI_ANY_SOURCE, tag_send, MPI_COMM_WORLD, &status);
+
+	/* printf("at id= %d, from: %d ijk: %d,%d,%d\n", my_id_glob, status.MPI_SOURCE);	 */
+
+	//for(int i=0; i<phi_sz; i++) printf("%f \n", SegRecvBuf.dat_vec[i]);
+	
+	break;
+
+      default:
+	ath_error("unknown error in SendSegmentData");
+      }
+      MPI_Type_free(&mpi_seg_data);
+      free(SegSendBuf.dat_vec);      
+      free(SegRecvBuf.dat_vec);
+  }
+
+void testSegments2(MeshS *pM, GridS *pG, int my_id, int TestType){
+
+  int ig_s = BufBndr[my_id][0];
+  int ig_e = BufBndr[my_id][3];
+  int kg_s = BufBndr[my_id][2];
+  int kg_e = BufBndr[my_id][5];
+  int js =  BufBndr[my_id][1];    
+  int je = BufBndr[my_id][4] ;
+
+  int phi_sz = je-js+1;
+  
+  my_id_glob=my_id;
+
+  int nmsg_snd=0, nmsg_recv=0;
+  int tag_send = 10;
+  
+  int n_tot_ms_snd = 0; /* total msg to send this.Grid*/
+  int n_tot_ms_rcv = 0; /* total msg to recv */
+
+  float err;
+	 
+  MPI_Request request;
+  MPI_Status status;
+
+  bool receive, send;
+
+  int NumMPIBlocks;
+  MPI_Comm_size(MPI_COMM_WORLD, &NumMPIBlocks);
+  
+  
+  int buf_size;
+  int dlen;
+  int num_extra = 4;
+    
+  buf_size = phi_sz + num_extra;
+ 
+  float *recv_1d_buf=NULL, *send_1d_buf=NULL;
+    
+  if( (recv_1d_buf = (float*)calloc_1d_array(buf_size, sizeof(float)))==NULL)
+    ath_error("[calloc_1d] failed to allocate send_1d_buf \n");
+
+  int *segm_mask_send; //stores refs to segments to be sent
+  int l_snd = 0; //send-segment index 
+  int l_rcv = 0; //recvd-segment index 
+    
+  switch (TestType){
+  case 1:   
+    //printf("id: %d, (l,%d), %d, %d, \n", my_id, l, kp, ip);
+    break;
+
+  case 2:
+
+    //plot(pM, "tau");
+            
+    //OptDepthAllSegBlock(pG);
+
+    
+ 
+    for(int l=0; l <= NumSegBlock_glb-1; l++){
+      if (pG->RaySegGridPerBlock[l].type == Upstr) n_tot_ms_snd +=1;
+    }
+    /* printf("-----------------------\n"); */
+    /* printf("id %d; n_tot_ms_snd= %d \n", my_id, n_tot_ms_snd); */
+
+    /* /\* prepare the big buffer to send *\/ */
+    /* if( (send_2d_buf = (float*)calloc_2d_array(n_tot_ms_snd, buf_size, */
+    /* 					       sizeof(float)))==NULL) */
+    /* ath_error("[calloc_1d] failed to allocate send_1d_buf \n"); */
+
+     /* int mpi1=1; */
+     /* while(mpi1==1); */
+
+#ifdef tau_sync_small_buf
+    
+    if( (send_1d_buf = (float*)calloc_1d_array(buf_size, sizeof(float)))==NULL)
+    ath_error("[calloc_1d] failed to allocate send_1d_buf \n");
+
+#else
+
+    if( (send_1d_buf = (float*)calloc_1d_array(buf_size * n_tot_ms_snd, sizeof(float)))==NULL)
+    ath_error("[calloc_1d] failed to allocate send_1d_buf \n");
+
+#endif
+
+    if( (segm_mask_send=(int*)calloc_1d_array(n_tot_ms_snd, sizeof(int)))==NULL)
+      ath_error("[calloc_1d] failed to allocate segm_mask_send\n");
+
+    /* n_tot_ms_snd =0; */
+    
+    for(int l=0; l <= NumSegBlock_glb-1; l++){
+      pG->RaySegGridPerBlock[l].n_msg_r = 0; //initialize
+      /* fill mask arrays and  calc tot number of messages */
+      if ( pG->RaySegGridPerBlock[l].type == Head ){	
+	n_tot_ms_rcv += (pG->RaySegGridPerBlock)[l].MPI_idConnectArray_size-1;
+      }	      
+      else if (pG->RaySegGridPerBlock[l].type == Upstr){
+	segm_mask_send[l_snd++] = l;
+      }      
+    }
+    /* printf(" case 2 ---- %d, %d ,%d \n", my_id, n_tot_ms_snd, n_tot_ms_rcv); */
+    
+
+     for(int ls =0; ls < n_tot_ms_snd ; ls++){
+
+       int l = segm_mask_send[ls];    /* fetch the true ref to segment */   
+
+	 int dest_id = pG->RaySegGridPerBlock[l].head_block[0];
+	 
+	 if (my_id == dest_id) ath_error("error with type");
+        
+	 /* for(int i=0; i < num_extra; i++) //pack coords of the head */
+	 /*   send_1d_buf[i]= pG->RaySegGridPerBlock[l].head_block[i];	  */
+	 /* for(int i=num_extra; i<buf_size; i++){ */
+	 /*   send_1d_buf[i]= pG->RaySegGridPerBlock[l].dat_vec_1d[i-num_extra]; */
+
+	 
+#ifdef tau_sync_small_buf
+
+	 for(int i=0; i < num_extra; i++) //pack coords of the head
+	   send_1d_buf[i]= (float)pG->RaySegGridPerBlock[l].head_block[i];
+	 
+	 send_1d_buf[0] = (float)n_tot_ms_snd;
+	 
+	 for(int i=num_extra; i<buf_size; i++)
+	   send_1d_buf[i]= pG->RaySegGridPerBlock[l].dat_vec_1d[i-num_extra];
+
+	 int ierr = MPI_Isend(&send_1d_buf[0], buf_size, MPI_FLOAT, dest_id,
+	 		     tag_send, MPI_COMM_WORLD, &request);
+#else
+	   
+	 for(int i=0; i < num_extra; i++) //pack coords of the head
+	   send_1d_buf[i + ls*buf_size]= (float)pG->RaySegGridPerBlock[l].head_block[i];
+	 
+	 send_1d_buf[ls*buf_size] = (float)my_id;//(float)n_tot_ms_snd;
+	 
+	 for(int i=num_extra; i<buf_size; i++)
+	   send_1d_buf[i + ls*buf_size]= pG->RaySegGridPerBlock[l].dat_vec_1d[i-num_extra];
+	   
+	   /* printf("l=%d, data= %f \n", l, send_1d_buf[i]);	    */
+	 	 			     
+	 int ierr = MPI_Isend(&send_1d_buf[ ls * buf_size ], buf_size, MPI_FLOAT, dest_id,
+	 		     tag_send, MPI_COMM_WORLD, &request);
+
+#endif
+	 
+	 /* int ierr = MPI_Send(&send_1d_buf[ ls * buf_size ], buf_size, MPI_FLOAT, dest_id, */
+	 /* 		     tag_send, MPI_COMM_WORLD); */	 
+	 /* int ierr = MPI_Send(&send_1d_buf[0], buf_size, MPI_FLOAT, dest_id, */
+	 /* 		     tag_send, MPI_COMM_WORLD); */
+
+	 nmsg_snd +=1;
+
+
+	 /* for(int i=0; i<buf_size; i++) printf("s_id %d ijk=(%d %d %d) data=%f \n", */
+	 /*        send_1d_buf[0], send_1d_buf[1], send_1d_buf[2], send_1d_buf[3], send_1d_buf[4] ); */
+	
+     }
+
+
+  
+     int lr=0;
+
+     
+#ifdef mpi_opt_depth_test1      
+     float err1  = 0;
+#endif
+     
+   /*   int mpi1=1; */
+   /* while(mpi1==1); */
+     
+     while(lr < n_tot_ms_rcv){
+
+       // printf("receiving %d %d %d\n", l, lr, n_tot_ms_rcv);
+	  
+       MPI_Recv(&recv_1d_buf[0], buf_size, MPI_FLOAT, MPI_ANY_SOURCE,
+		tag_send, MPI_COMM_WORLD, &status);
+
+       if(status.MPI_ERROR==0){
+	 nmsg_recv+=1;
+	 int id = round(recv_1d_buf[0]);
+	 int i = round(recv_1d_buf[1]);
+	 int j = round(recv_1d_buf[2]);
+	 int k = round(recv_1d_buf[3]);
+
+	 /* printf(" n_msg_sent_ = %d \n",  n_msg_sent_); */
+	 
+	 int l = pG->BlockToRaySegMask[k][i];
+	 pG->RaySegGridPerBlock[l].n_msg_r += 1;
+
+	 
+	 for(int m = 0; m < phi_sz; m++)
+	   pG->RaySegGridPerBlock[l].dat_vec_1d[m] += recv_1d_buf[m+num_extra];
+	 
+	 /* for(int m=0; m< phi_sz; m++) */
+	 /*    printf("r_id %d ijk=(%d %d %d) %f \n", id, i, j, k, */
+	 /* 	   pG->RaySegGridPerBlock[l].dat_vec_1d[m]); */
+
+
+
+	   /* int m=k; */
+	 /*   printf("r_id %d ijk=(%d %d %d) %f \n", id, i, j, k, */
+	 /* 	  pG->RaySegGridPerBlock[l].dat_vec_1d[m] */
+	 /* 	  ); */
+
+	 { /* calc the same along the Ray */
+#ifdef mpi_opt_depth_test1 	 	 
+	   int len = (pG->GridOfRays[k][i]).len;
+	   float s=0;
+	   for (int n = 0; n < len; n++){
+	     s += (pG->GridOfRays[k][i]).Ray[n].dl;
+	     //	      	printf("%d, %f \n", ii, s);
+	   }
+#endif	   
+
+	   int con_arr_sz =  (pG->RaySegGridPerBlock)[l].MPI_idConnectArray_size;	   
+
+	   /* if (n_tot_ms_rcv != con_arr_sz-1){ */
+	   /*   printf("n_tot_ms_rcv=%d, con_arr_sz=%d, n_msg_sent_=%d\n", */
+	   /* 	    n_tot_ms_rcv, con_arr_sz); */
+	   /*   ath_error("error n_tot_ms_rcv,  con_arr_sz-1, n_msg_sent_ problems "); */
+
+	   /* } */
+
+	     
+	   if (pG->RaySegGridPerBlock[l].n_msg_r == con_arr_sz-1){	     
+
+	     /* printf("****** id %d n_msg_sent_: %d , actual %d con_arr_ %d \n", my_id, n_msg_sent_, */
+	     /* 	    pG->RaySegGridPerBlock[l].n_msg_r,  con_arr_sz); */
+
+	     for(int m = 0; m < phi_sz; m++) {
+	       
+	       int iloc, jloc, kloc;	       
+	       ijkGlobToLoc(pG, i, m, k, &iloc, &jloc, &kloc);
+
+	      if (pG->tau_e == NULL) ath_error("pG->tau_e == NULL, error ");	       	       
+	       pG->tau_e[kloc][jloc][iloc] = pG->RaySegGridPerBlock[l].dat_vec_1d[m];
+	       
+#ifdef mpi_opt_depth_test1 
+	       err1 += fabs( pG->RaySegGridPerBlock[l].dat_vec_1d[m] - s );
+	       err += fabs(pG->tau_e[kloc][jloc][iloc]-s);
+	       // pG->yglob[k][m][i].tau = pG->RaySegGridPerBlock[l].dat_vec_1d[m];
+	       pG->yglob[k][m][i].tau = s;     	   
+	       /* if(my_id==1) */
+	       /* 	 printf("id:%d, src: %d, err=%f %f\n", */
+	       /* 		my_id, status.MPI_SOURCE, err1, err); */
+#endif
+	       
+	     }	     	     
+	   }	  	 	   
+	 }
+	 
+	 lr+=1;
+
+	 //printf(" n_msg received = %d \n",  lr);
+	 
+       } else   ath_error("error with MPI_ERROR==0");
+       
+#ifdef mpi_opt_depth_test1 
+     printf("id:%d;  err_s0 =%f \n",  my_id, err);
+#endif 
+       
+     }/* eof receive-loop */
+
+
+     MPI_Barrier(MPI_COMM_WORLD);
+
+     
+      /* special case of the Grid closest to the source  */
+     for(int l=0; l <= NumSegBlock_glb-1; l++){      
+       if ( pG->RaySegGridPerBlock[l].type == Head && n_tot_ms_rcv == 0){	 
+	 for(int m = 0; m < phi_sz; m++) {
+	   int i = pG->RaySegGridPerBlock[l].head_block[1];
+	   int k = pG->RaySegGridPerBlock[l].head_block[3];
+
+	   float s=0;	   
+#ifdef mpi_opt_depth_test1 	   	   
+	   for (int n = 0; n < (pG->GridOfRays[k][i]).len; n++)
+	     s += (pG->GridOfRays[k][i]).Ray[n].dl;
+	   pG->yglob[k][m][i].tau = s;
+#endif
+	   
+           int iloc, jloc, kloc;	       
+           ijkGlobToLoc(pG, i, m, k, &iloc, &jloc, &kloc);
+
+	   pG->tau_e[kloc][jloc][iloc] = pG->RaySegGridPerBlock[l].dat_vec_1d[m]; 
+
+	   //	   pG->yglob[k][m][i].tau = pG->tau_e[kloc][jloc][iloc];
+	   //	   pG->yglob[k][m][i].tau = pG->tau_e[kloc][jloc][iloc];	   
+	   /* printf("%f \n", pG->yglob[k][m][i].tau); */	   
+	   /* err += fabs(  pG->tau_e[kloc][jloc][iloc] -  pG->yglob[k][m][i].tau); */
+	   // printf("id0:%d;  res1 =%f res2=%f\n",  my_id, pG->tau_e[kloc][jloc][iloc], s);
+	 }	 
+       }
+     }
+
+     //MPI_Barrier(MPI_COMM_WORLD);
+     /* printf("%d total sent %d; received %d \n", my_id,  nmsg_snd, nmsg_recv); */
+     
+#ifdef mpi_opt_depth_test1 	 	      
+     //printf("id:%d;  err_s1 =%f \n",  my_id, err);                               	
+     int kp, jp , ip;
+     for (kp = BufBndr[my_id][2]; kp <= BufBndr[my_id][5]; kp++) {
+       for (jp = BufBndr[my_id][1]; jp<=BufBndr[my_id][4]; jp++) {
+	 for (ip =BufBndr[my_id][0]; ip<=BufBndr[my_id][3]; ip++) {
+	   int iloc, jloc, kloc;
+	   ijkGlobToLoc(pG, ip, jp, kp, &iloc, &jloc, &kloc);
+	   /* 	     err += fabs(pG->yglob[kp][jp][kp].tau - pG->tau_e[kloc][jloc][iloc]); */
+	   pG->yglob[kp][jp][ip].tau = pG->tau_e[kloc][jloc][iloc];
+	   /* printf("id %d  %d %d %d\n",my_id, ip, kp, jp);  */
+	   /* 	     /\* if(my_id==0) *\/ */
+	   /* 	     /\* printf("id %d tau_g=%f, tau_l=%f ijk= (%d %d %d)\n", *\/ */
+	   /* 	     /\* 	    my_id, *\/ */
+	   /* 	     /\* 	    pG->yglob[kp][jp][kp].taru, pG->tau_e[kloc][jloc][iloc], *\/ */
+	   /* 	     /\* 	    ip, kp, jp); *\/ */
+	 }
+       }
+     }
+     SyncGridGlob(pM, pG, ID_TAU);	
+#endif
+     
+/* #ifdef mpi_opt_depth_test1  */
+/*        // printf("id %d err_end = %f \n", my_id, err); */
+/* #endif */
+
+
+   MPI_Barrier(MPI_COMM_WORLD);
+
+    
+   //if(my_id == 0)
+
+      //aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "tau");
+    
+      /* aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "ro"); */
+    break;
+	
+  default:
+    printf("%d \n", TestType);
+    ath_error("unknown case in testSegments2");
+    
+  } // switch
+ 
+  
+  free_1d_array(segm_mask_send);
+  free_1d_array(recv_1d_buf);
+  free_1d_array(send_1d_buf);
+  /* free_2d_array(send_2d_buf); */
+}
+
+
+/* void CalcParallelOdepthData(GridS *pG, int my_id){ */
+
+/*   int ig_s = BufBndr[my_id][0]; */
+/*   int ig_e = BufBndr[my_id][3]; */
+/*   int kg_s = BufBndr[my_id][2]; */
+/*   int kg_e = BufBndr[my_id][5]; */
+        	
+/*     {//create MPI datatype */
+/*       const int nitems=3; */
+/*       int blocklengths[3] = {1,1,1};	   */
+/*       MPI_Datatype types[3] = {MPI_INT, MPI_INT, MPI_FLOAT}; */
+/*       MPI_Datatype mpi_seg_data;	  */
+/*       MPI_Aint offsets[3]; */
+
+/*       offsets[0] = offsetof(SegHeadId, i); */
+/*       offsets[1] = offsetof(SegHeadId, k); */
+/*       offsets[2] = offsetof(SegHeadId, dat);	   */
+
+/*       MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_seg_data); */
+/*       MPI_Type_commit(&mpi_seg_data); */
+	
+	
+/*       SegHeadId SegSendBuf, SegRecvBuf; */
+	  
+/*       const int tag = 13; */
+
+
+/*       for (int l=0; l <= NumSegBlock_glb - 1; l++){	 */
+
+/* 	int dest_id = pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[0];	 */
+
+/* 	int mpi1=1; */
+/* 	/\* while(mpi1==1); *\/				  		     */
+
+/* 	int i_loc, k_loc, l_loc; */
+  
+/* 	if (my_id != dest_id){ */
+
+/* 	  SegSendBuf.i = pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[1]; */
+/* 	  SegSendBuf.k = pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[2]; */
+/* 	  SegSendBuf.dat = pG->RaySegGridPerBlock[l].dTau; */
+
+/* 	  if(pG->RaySegGridPerBlock[l].type == Head) ath_error("error in testSegments2"); */
+	    
+/* 	  MPI_Send(&SegSendBuf, 1, mpi_seg_data, dest_id, tag, MPI_COMM_WORLD); */
+
+/* 	  // printf("send: %d, %d, %f \n", SegSendBuf.i, SegSendBuf.k, SegSendBuf.dat); */
+/* 	}   */
+	  
+
+/* 	if (my_id == dest_id){ */
+	    
+/* 	  MPI_Status status; */
+
+/* 	  /\* we dont need id of my_id, i.e. relevant size = real_size-2 *\/	     */
+/* 	  int buf_max =  (pG->RaySegGridPerBlock)[l].MPI_idConnectArray_size; */
+	    
+/* 	  for(int impi=0; impi <= buf_max-2; impi++){ */
+/* 	    /\* iterate over upstream segments, current elem not included *\/ */
+
+/* 	    int orig_id = pG->RaySegGridPerBlock[l].MPI_idConnectArray[impi]; */
+/* 	    //printf("MPI connect, my_id=%d, mpi_indx=%d \n", my_id,mpi_indx); */
+
+/* 	    MPI_Recv(&SegRecvBuf, 1, mpi_seg_data, orig_id, tag, MPI_COMM_WORLD, &status); */
+	      
+/* 	    /\* printf("from:%d to:%d, %d, %d %f \n", orig_id, dest_id, SegRecvBuf.i, *\/ */
+/* 	    /\* 	     SegRecvBuf.k, SegRecvBuf.dat); *\/ */
+
+/* 	    k_loc=SegRecvBuf.k; */
+/* 	    i_loc=SegRecvBuf.i;	       */
+/* 	    l_loc=pG->BlockToRaySegMask[k_loc][i_loc]; */
+
+/* 	    /\* printf("id = %d, lloc= %d \n", my_id, l_loc); *\/ */
+		
+/* 	    pG->RaySegGridPerBlock[l_loc].dTau += SegRecvBuf.dat; */
+	     	      
+/* 	  } */
+	    
+/* 	  if (buf_max < 2){//closest to source	       */
+/* 	    i_loc=pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[1]; */
+/* 	    k_loc=pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[2]; */
+/* 	    l_loc=pG->BlockToRaySegMask[k_loc][i_loc]; */
+	       
+/* 	  } */
+	    
+/* 	  /\* calc the same along the Ray *\/ */
+/* 	  Real s=0; */
+/* 	  int len=(pG->GridOfRays[k_loc][i_loc]).len; */
+
+/* 	  for (int ii = 0; ii<len; ii++){ */
+/* 	    s += (pG->GridOfRays[k_loc][i_loc]).Ray[ii].dl; */
+/* 	    //	      	printf("%d, %f \n", ii, s); */
+/* 	  } */
+
+/* 	  printf("id:%d, s=%f, dat=%f \n",my_id, s, pG->RaySegGridPerBlock[l_loc].dTau); */
+	    	    
+/* 	} /\* my_id == dest_id *\/ */
+	  	  
+/*       }	  	 */
+/*     }/\* end seg-loop *\/    	      */
+
+
+/* } */
+
+
+
+
+  
+
+void Constr_SegmentsFromRays_version1(MeshS *pM, GridS *pG, int my_id){
+  /*! breaks the grid of rays, obtained from global grid into individual segments
+    belonging to a particular MPI Block = Grid */
+  
+  int ig,ig_s,ig_e, kg,kg_s,kg_e, jg, je,ii, i,k,NumSeg;
+  int NumOfSegInBlock,NumMPIBlocks,cur_id,pr_id,mpi1;
+  enum BCBufId Side;
+  /* enum WhereIAM {InBlock=0, OutBlock=1}InOutBlock; */     
+  int *tmp_mpiIdVec;        //tmp stores mpi ids of segments
+  enum SegmentType *tmp_SegType;   //tmp stores array of segments type 
+  RaySegment   *tmpSegGrid; /* temp array: we don't know how many segs per Block */ 
+ 
+  ig_s = BufBndr[my_id][0];
+  ig_e = BufBndr[my_id][3];
+  kg_s = BufBndr[my_id][2];
+  kg_e = BufBndr[my_id][5];
+
+  MPI_Comm_size(MPI_COMM_WORLD, &NumMPIBlocks);
+  
+  int N = (ig_e-ig_s)*(kg_e-kg_s);
+  int N2 = N*N;
+  if( (tmp_mpiIdVec = (int*)calloc_1d_array(N2, sizeof(int)))==NULL)    
+      ath_error("[calloc_1d] failed to allocate mpiIdVec \n");
+  
+  if( (tmpSegGrid = (RaySegment*)calloc_1d_array(N2, sizeof(RaySegment)))==NULL)
+      ath_error("[calloc_1d] failed to allocate tmpRaySegGridPerBlock \n");
+     
+  jg = 0; /* rays must be in phi_j =const planes */
+    
+  for (kg=kg_s; kg<=kg_e; kg++) {   // z
+    for (ig=ig_s; ig<=ig_e; ig++) { //R
+      
+      
+      findSegmPartitionFromRay(pG, pG->GridOfRays[kg][ig], ig,kg,
+			       tmpSegGrid, &NumSeg, tmp_mpiIdVec,
+			       NumMPIBlocks, my_id);
+      /* mpi1=1; */
+      /* while( mpi1==1 ); */
+
+      testSegments1(pG, ig, kg, tmpSegGrid, my_id);
+	
+      /* printf("segment test1, id: %d , ig= %d , kg= %d  \n", my_id, ig, kg); */
       
     } //ig
   } //kg
 
-  free(tmpRaySegGridPerBlock);
+  free(tmp_mpiIdVec);
+
+  mpi1=1;
+  while( mpi1==1 );
 }
 
-void AssignSegmentFromRay(GridS *pG, int i_Seg_s, int i_Seg_e, int i_RayDest, int k_RayDest){
 
-  int ii;
 
-  pG->RaySegGridPerBlock = (RayData**)calloc_2d_array(yglob_sz[2], yglob_sz[0], sizeof(RayData));
+void testSegments1(GridS *pG, int ip, int kp, RaySegment* tmpSegGrid, int my_id){
+  /* first prints the full ray; then the segments */
+
+  int ii,itr;
+  float s1=0,s2=0;
+  int s11=0,s22=0;
   
-   (pG->GridOfRays[kp][ip]).Ray =
-  	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData));
+  int len=(pG->GridOfRays[kp][ip]).len;
+  
+  /* mpi1=1; */
+  /* while( mpi1==1 ); */      
 
-  /* for (ii = 0; ii< ; ii++){ */
+  {    
+  for (ii = 0; ii<len; ii++){
+    s1 += (pG->GridOfRays[kp][ip]).Ray[ii].dl;
+    s11 += (pG->GridOfRays[kp][ip].Ray[ii].i + pG->GridOfRays[kp][ip].Ray[ii].k);
+  }
+
+  
+  int ns=0;      
+  for (int l=0; l<= 1000; l++){
     
-  /* pG->GridOfRays[k_RayDest][i_RayDest].len */
+    for(int i=0; i<=tmpSegGrid[l].data_len-1;i++){
+      s2 += tmpSegGrid[l].data[i].dl;
+      s22 += (tmpSegGrid[l].data[i].i +tmpSegGrid[l].data[i].k);	
+    }    
+    ns++;
+    if (tmpSegGrid[l].type == Head) break;
+  }
+  printf("id=%d ip=%d, kp=%d; ns=%d, s1=%f s2=%f, s11=%d s22=%d \n",
+	 my_id, ip, kp, ns, s1, s2, s11, s22);
+  printf("==============================================\n");
+  }
 
-  /*   (pG->GridOfRays[kp][ip]).Ray = */
-  /* 	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData)); */
+}  
 
 
-printf("make sure to dealloc \n");
+void findSegmPartitionFromRay(GridS *pG, RayData GridOfRays,int ig,int kg,
+			      RaySegment* tmpSegGrid,
+			      int* NumSeg,
+			      int* tmp_mpiIdVec,
+			      int NumMPIBlocks, int my_id){
+  int ii,i,j,k,ip,seg_i,cur_id,prev_id,fut_id,is_s,is_e;
 
+  cur_id = -1;
+  prev_id = -1;
+  fut_id = -1;
+  seg_i = 0;
+
+  /* mpi1=1; */
+  /* while(mpi1==1 ); */
+  
+  for (ii = 0; ii< GridOfRays.len; ii++){
+  
+    SearchBufId(GridOfRays.Ray[ii].i, GridOfRays.Ray[ii].k, NumMPIBlocks, &cur_id);
+    
+    tmpSegGrid[seg_i].type = Upstr; //default val
+    tmpSegGrid[seg_i].MPI_idConnectArray_size =0; //default val
+
+    if(ii==0){ //very first seg; first elem */
+      tmpSegGrid[seg_i].data_len=1;
+      tmp_mpiIdVec[seg_i] = cur_id;
+      is_s = ii;
+      is_e = is_s;      
+      prev_id = cur_id;      
+    }
+
+    /* look ahead */
+    if (ii< GridOfRays.len-1){
+      SearchBufId(GridOfRays.Ray[ii+1].i, GridOfRays.Ray[ii+1].k, NumMPIBlocks, &fut_id);
+    }
+
+    if((fut_id != cur_id) || (ii==GridOfRays.len-1)){/* last cell of a segment */           
+      is_e = ii;
+      tmpSegGrid[seg_i].data_len = ii-is_s+1;      
+      tmp_mpiIdVec[seg_i] = cur_id;
+      
+      if( (tmpSegGrid[seg_i].data=
+      	   (SegmentData*)calloc_1d_array(tmpSegGrid[seg_i].data_len,sizeof(SegmentData)))==NULL)
+	   ath_error("[calloc_1d] failed to allocate findSegmPartitionFromRay, 1 \n");
+
+      if (ii==GridOfRays.len-1){
+
+	tmpSegGrid[seg_i].type = Head;
+	tmpSegGrid[seg_i].MPI_idConnectArray_size = seg_i+1;
+	
+	if( (tmpSegGrid[seg_i].MPI_idConnectArray=
+	     (int*)calloc_1d_array(seg_i+1,sizeof(int)))==NULL)
+	  ath_error("[calloc_1d] failed to allocate findSegmPartitionFromRay, 2 \n");
+	for(i=0; i<=seg_i; i++) tmpSegGrid[seg_i].MPI_idConnectArray[i]=tmp_mpiIdVec[i];
+      }
+      
+      for(ip = is_s; ip<= is_e; ip++){ //is_s and is_e are in the Ray structure
+	int l = ip - is_s;
+	tmpSegGrid[seg_i].data[l].i = GridOfRays.Ray[ip].i;	
+	tmpSegGrid[seg_i].data[l].k = GridOfRays.Ray[ip].k;
+      	tmpSegGrid[seg_i].data[l].dl = GridOfRays.Ray[ip].dl;	
+      }
+     
+      is_s = ii+1; //next first cell          
+      seg_i+=1;
+    } /* end last cell of a segment */
+
+
+    }//ii
+
+  *NumSeg=seg_i;
+}
+
+
+/* void testSegments1(GridS *pG, int ip, int kp, RaySegment* tmpSegGrid, int my_id){ */
+/*   /\* first prints the full ray; then the segments *\/ */
+
+/*   int ii,itr; */
+/*   float s1=0,s2=0; */
+/*   int s11=0,s22=0; */
+  
+/*   int len=(pG->GridOfRays[kp][ip]).len; */
+  
+/*   /\* mpi1=1; *\/ */
+/*   /\* while( mpi1==1 ); *\/       */
+
+/*   {     */
+/*   for (ii = 0; ii<len; ii++){ */
+/*     s1 += (pG->GridOfRays[kp][ip]).Ray[ii].dl; */
+/*     s11 += (pG->GridOfRays[kp][ip].Ray[ii].i + pG->GridOfRays[kp][ip].Ray[ii].k); */
+/*   } */
+
+  
+/*   int ns=0;       */
+/*   for (int l=0; l<= 1000; l++){ */
+    
+/*     for(int i=0; i<=tmpSegGrid[l].data_len-1;i++){ */
+/*       s2 += tmpSegGrid[l].data[i].dl; */
+/*       s22 += (tmpSegGrid[l].data[i].i +tmpSegGrid[l].data[i].k);	 */
+/*     }     */
+/*     ns++; */
+/*     if (tmpSegGrid[l].type == Head) break; */
+/*   } */
+/*   printf("id=%d ip=%d, kp=%d; ns=%d, s1=%f s2=%f, s11=%d s22=%d \n", */
+/* 	 my_id, ip, kp, ns, s1, s2, s11, s22); */
+/*   printf("==============================================\n"); */
+/*   } */
+
+/* } */
+
+  
+void SearchBufId(int i, int k, int NumMpiBlocks, int* id_res){
+  /* finds MPI block (Grid) where we are located; (R,Z) plane only*/
+  int  is,ie,ks,ke,id;
+  
+  for(id=0; id < NumMpiBlocks; id++){
+      is = BufBndr[id][0];
+      ie = BufBndr[id][3];
+      ks = BufBndr[id][2];
+      ke = BufBndr[id][5];
+      
+      if((i>=is) && (i<=ie) && (k>=ks) && (k<=ke)){
+	*id_res = id;
+	break;
+      }
+  }        
 }
 
 
 
-enum BCBufId CheckCrossBlockBdry(int i, int k, int my_id){
+
+
+enum BCBufId CheckCrossBlockBdry(int i, int k, int *BlockId){
    /* checks if the ray passes block side */
   int is,ie,ks,ke;
  
-  is = BufBndr[my_id][0];
-  ie = BufBndr[my_id][3];
-  ks = BufBndr[my_id][2];
-  ke = BufBndr[my_id][5];  
+  is = BufBndr[*BlockId][0];
+  ie = BufBndr[*BlockId][3];
+  ks = BufBndr[*BlockId][2];
+  ke = BufBndr[*BlockId][5];  
 
   if (i==is) return LS;
   if (i==ie) return RS;
@@ -670,8 +1750,8 @@ enum BCBufId CheckCrossBlockBdry(int i, int k, int my_id){
 
 
 CellOnRayData *tmpCellIndexAndDisArray;
-Real *tmpRealArray;
-short ncros;
+
+int ncros;
 
 
 void ionizParam(const MeshS *pM, GridS *pG){
@@ -685,39 +1765,42 @@ void ionizParam(const MeshS *pM, GridS *pG){
   ks = pG->ks;
   ke = pG->ke;
  
-  
-   for (kp=ks; kp<=ke; kp++) {   // z
+
+  for (kp=ks; kp<=ke; kp++) {   // z
     for (jp=js; jp<=je; jp++) { // phi        
       for (ip = is; ip<=ie; ip++) { //R
-	/* position on glob */
-	ijkLocToGlob(pG, ip,jp,kp, &i_g, &j_g, &k_g);
-
-	pG->tau_e[kp][jp][ip] = pG->yglob[k_g][j_g][i_g].tau;
 
 	if ((pG->U[kp][jp][ip].d > tiny)){
 	  cc_pos(pG,ip,jp,kp, &x1,&x2,&x3);
 	  
-	  xi = Lx / (Nsc* fmax(pG->U[ kp ][ jp ][ ip ].d , rho0))/
+	  xi = Lx / (Nsc* fmax(pG->U[kp][jp][ip].d , rho0))/
 	    pow(Rsc,2)/fmax(pow(x1 - rRadSrc[0], 2) + pow(x3 - rRadSrc[1] ,2), tiny);
 	  /* printf("%f\n", Nsc); */
-	}
-	
+	}	
 	else{
 	  printf("quite possibly something is negative in opticalProps ");
 	  /* apause(); */
 	}
-	
+
 	pG->xi[kp][jp][ip]  = xi;
-
 	
-	pG->xi[kp][jp][ip]  *=  ( exp(-pG->yglob[k_g][j_g][i_g].tau)  );
+#ifdef save_memory
 
-	/* printf("%f \n", pG->xi[kp][jp][ip] ); */
+	Real tau_x= pG->tau_e[kp][jp][ip];
 
+	/* printf(" %f \n", tau_x); */
+	
+#else
+	/* position on glob */
+	ijkLocToGlob(pG, ip,jp,kp, &i_g, &j_g, &k_g);
+	Real tau_x = pG->yglob[k_g][j_g][i_g].tau;
+#endif		
+	pG->xi[kp][jp][ip]  *=  exp(-tau_x);
+	/* printf("%f %f \n", tau_x, pG->xi[kp][jp][ip] ); */
 
       }
     }
-   }
+  }
 
 
 	
@@ -1067,7 +2150,7 @@ Real updateEnergyFromXrayHeatCool(const Real E, const Real d,
 
     if (Tg > Tx) Tg = Tx;
 
-    /*   printf(" Tg = %e dens = %e \n", Tg, dens); */
+      /* printf(" Tg = %e dens = %e \n", Tg, d*Dsc); */
     /* } */
 
     Pnew = Tg* (d*Dsc*RGAS)/(Esc * M_MW);
@@ -1268,7 +2351,7 @@ void plot(MeshS *pM, char name[16]){
 	
       }      
       if (strcmp(name, "xi") == 0){
-	fprintf(f, "%f \n", pG->xi[k][j][i] );
+	fprintf(f, "%f \n", log10(pG->xi[k][j][i]) );
       }
 #endif
     }
@@ -1279,7 +2362,7 @@ void plot(MeshS *pM, char name[16]){
 }
 
 #ifdef XRAYS
-
+#ifdef use_glob_vars 
 void aplot(MeshS *pM, int is, int js, int ks, int ie, int je, int ke, char name[16]){
   
   int i,j,k,nx1,nx2,nx3,il, jl, kl, iu, ju, ku;
@@ -1325,7 +2408,8 @@ void aplot(MeshS *pM, int is, int js, int ks, int ie, int je, int ke, char name[
   for (k=kl; k<=ku; k++) {
     for (i=il; i<=iu; i++){
       if (strcmp(name, "tau") == 0){
-	fprintf(f, "%f\n",  pG->yglob[k][j][i].tau );
+	//fprintf(f, "%f\n",  log10(pG->yglob[k][j][i].tau) );
+		fprintf(f, "%f\n",  (pG->yglob[k][j][i].tau) );
       }
 
       else if (strcmp(name, "ro") == 0){
@@ -1338,7 +2422,7 @@ void aplot(MeshS *pM, int is, int js, int ks, int ie, int je, int ke, char name[
   fclose(f);
   system("./plot_from_athena.py");
 }
-
+#endif 
 #endif  /* XRAYS */
 
 
@@ -1444,12 +2528,16 @@ void problem(MeshS *pM, DomainS *pDomain)
 {
   GridS *pG=(pDomain->Grid);
 
+
+  
 #ifdef XRAYS
   CoolingFunc = updateEnergyFromXrayHeatCool; 
 #endif
 #ifdef CAK_FORCE
  RadiationPresLines = CAK_RadPresLines;
 #endif
+
+  
 
   int i,j,k;
   int is,ie,js,je,ks,ke,nx1,nx2,nx3;
@@ -1890,38 +2978,70 @@ void problem(MeshS *pM, DomainS *pDomain)
 
  
 #ifdef MPI_PARALLEL
+  
+  /* 1) */
 
 
+  //{ printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}   
   Constr_RayCastingOnGlobGrid(pM, pG, my_id); //mainly calc. GridOfRays
+ 
 
-  Constr_SegmentsFromRays(pM, pG, my_id);
-
-  initGlobComBuffer(pM, pG);
-
+  /* 2) */
+  initGlobComBuffer(pM, pG);  //here is the problem
+  
   MPI_Barrier(MPI_COMM_WORLD);
-  /* sync global patch */   
-  SyncGridGlob(pM, &pDomain, pG, ID_DEN);
 
 
-  optDepthStackOnGlobGrid(pM, pG, my_id); //calc. tau 
-  SyncGridGlob(pM, &pDomain, pG, ID_TAU);
-           
-  ionizParam(pM, pG);
+  
+  /* sync global patch */  
+#ifdef use_glob_vars 
+  SyncGridGlob(pM, pG, ID_DEN);
+   MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  
+ 
+  
+  { /*  ------- optical depth block from segments in parallel------------*/
+    /* 1) construct grid of ray segments which belong to MPI-block; */
+    /* unique: by index of the ray on a block; id,i,k) id and coords of the ray ending */
 
-  /* plot(pM, "xi"); */  
-  /* aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "tau"); */
+    my_id_glob=my_id;
+     
+    Constr_SegmentsFromRays(pM, pG, my_id);    
+    MPI_Barrier(MPI_COMM_WORLD);
+
+  /* { printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}   */
+    
+    OptDepthAllSegBlock(pG); // tau on a local mpi block
+    testSegments2(pM, pG, my_id, 2);    //MPI sync tau segments
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+  
+   
+}
+
+#ifdef use_glob_vars    
+  //optDepthStackOnGlobGrid(pM, pG, my_id); //calc. tau
+  //SyncGridGlob(pM,pG, ID_TAU);           
+#endif
+      
+   ionizParam(pM, pG);
+   MPI_Barrier(MPI_COMM_WORLD);
+  /* if(my_id == 0) plot(pM, "xi");   */
+
+
+
+   
   /* calcGravitySolverParams(pM, pG); */
 
  
 #else  /* NOT PARALLEL *cd/
 
-    /* printf("  pM->RootMinX[0] = %f \n\n", pM->RootMinX[0] ); */
-    
-    // Constr_optDepthStackOnGlobGrid(pM, pG); //mainly calc. GridOfRays
-    
+    /* printf("  pM->RootMinX[0] = %f \n\n", pM->RootMinX[0] ); */    
+    // Constr_optDepthStackOnGlobGrid(pM, pG); //mainly calc. GridOfRays    
     // optDepthStackOnGlobGrid(pM, pG); //calc. tau
 
-    ionizParam(pM, pG);
+    /* ionizParam(pM, pG); */
     
     // Constr_optDepthStack(pM, pG);
     // optDepthStack(pM, pG);
@@ -1992,24 +3112,55 @@ void problem_write_restart(MeshS *pM, FILE *fp)
   return;
 }
 
-void problem_read_restart(MeshS *pM, FILE *fp)
-//void problem_read_restart(GridS *pG, DomainS *pD, FILE *fp)
+void problem_read_restart(MeshS *pM,  GridS *pG)
+/* void problem_read_restart(GridS *pG, DomainS *pD, FILE *fp) */
 {
-  GridS *pG=pM->Domain[0][0].Grid;
 
-  //  q = par_getd("problem","q");
-  //  r0 = par_getd("problem","r0");
-  //  r_in = par_getd("problem","r_in");
-  //  rho0 = par_getd("problem","rho0");
-  //  e0 = par_getd("problem","e0");
-  //	seed = par_getd("problem","seed");
+  /* DomainS *pD = (DomainS*)&(pM->Domain[0][0]); */
+  /* GridS *pG = pD->Grid; */
 
-  //#ifdef MHD
-  //  dcut = par_getd("problem","dcut");
-  //  beta = par_getd("problem","beta");
-  //#endif
+  if (pG->GridOfRays == NULL) ath_error("pG->GridOfRays != NULL, error on restart");
 
+  /*  (pG->GridOfRays[0][0]).Ray = */
+  /*   	(CellOnRayData*)calloc_1d_array(1,sizeof(CellOnRayData));  */
+
+  /* { printf("MPI breakpoint2, id=%d \n", -20); int mpi1= 1;  while(mpi1 == 1);} */
+  
+  /* (pG->GridOfRays[0][0]).Ray = */
+
+    
+  /* (pG->GridOfRays[0][0]).Ray = */
+  /* 	(CellOnRayData*)calloc_1d_array(1,sizeof(CellOnRayData)); */
+  
+  /* if (pM->Domain[0][0].Grid != NULL) { */
+  /*   pG = pM->Domain[0][0].Grid;   				     */
+  /* } else { */
+  /*   ath_error("error 1 on restart");     */
+  /* } */          
+  int my_id;
+  
+  /* Read initial conditions */
+  F2Fedd = par_getd("problem","F2Fedd");
+  fx = par_getd("problem","fx");  
+  fuv = par_getd("problem","fuv");
+  nc0 = par_getd("problem","nc0");
+  q      = par_getd("problem","q");
+  r0     = par_getd("problem","r0");
+  r_in   = par_getd("problem","r_in");
+  rho0   = par_getd("problem","rho0");
+  e0     = par_getd("problem","e0");
+  seed   = par_getd("problem","seed");
+
+#ifdef MHD
+  dcut = par_getd("problem","dcut");
+  beta = par_getd("problem","beta");
+#endif
+  
   /* Enroll the gravitational function and radial BC */
+
+  if(MPI_SUCCESS != MPI_Comm_rank(MPI_COMM_WORLD, &my_id))
+    ath_error("[main]: Error on calling MPI_Comm_rank in torus9.c\n");
+   
   StaticGravPot = grav_pot;
   x1GravAcc = grav_acc;
 
@@ -2020,6 +3171,43 @@ void problem_read_restart(MeshS *pM, FILE *fp)
   bvals_mhd_fun(pG, left_x3,  diode_outflow_ix3 );
   bvals_mhd_fun(pG, right_x3, diode_outflow_ox3);
 
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  /* pG->GridOfRays = (RayData**)calloc_2d_array(pM->Nx[2], pM->Nx[0], sizeof(RayData)); */
+  //if (pG->GridOfRays == NULL) goto on_error_xrays_GridOfRays;
+  
+  
+
+  
+  /* 1) */
+  Constr_RayCastingOnGlobGrid(pM, pG, my_id); //mainly calc. GridOfRays
+
+
+  
+  
+  /* 2) */
+  initGlobComBuffer(pM, pG);  //here is the problem
+  /* 3) */
+  MPI_Barrier(MPI_COMM_WORLD);
+  /* 4) */
+  
+#ifdef use_glob_vars
+  SyncGridGlob(pM, pG, ID_DEN);
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  my_id_glob=my_id;
+  Constr_SegmentsFromRays(pM, pG, my_id);    
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  /* { printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}   */
+ 
+    
+  OptDepthAllSegBlock(pG); // tau on a local mpi block
+  testSegments2(pM, pG, my_id, 2);    //MPI sync tau segments
+  MPI_Barrier(MPI_COMM_WORLD);
+  ionizParam(pM, pG);
+  MPI_Barrier(MPI_COMM_WORLD);
+   
   return;
 }
 
@@ -2049,6 +3237,9 @@ void Userwork_in_loop (MeshS *pM)
 
   //A.D.
 
+
+
+    
   GridS *pG=pM->Domain[0][0].Grid;
 
   DomainS pD = pM->Domain[0][0];
@@ -2076,39 +3267,42 @@ void Userwork_in_loop (MeshS *pM)
   
   
 #ifdef XRAYS
-
- 
 #ifdef MPI_PARALLEL
-
-
-
   MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
 
-  SyncGridGlob(pM, &pD, pG, ID_DEN);
+#ifdef use_glob_vars 
+  SyncGridGlob(pM, pG, ID_DEN);
+#endif
 
+  MPI_Barrier(MPI_COMM_WORLD);
   
-  optDepthStackOnGlobGrid(pM, pG, my_id);
-  
-  SyncGridGlob(pM, &pD, pG, ID_TAU);  
-
+  /* optDepthStackOnGlobGrid(pM, pG, my_id);   */
+  /* SyncGridGlob(pM, pG, ID_TAU);   */
+   
+  OptDepthAllSegBlock(pG); // tau on a local mpi block
+  testSegments2(pM, pG, my_id, 2);    //MPI sync tau segments
+  MPI_Barrier(MPI_COMM_WORLD);  
   ionizParam(pM, pG);
 
-  
-  /* plot(pM, "xi"); */
-  /* if (my_id == 2 ) { */
-  /*   aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "tau"); */
-  /*   aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "ro"); */
-  /* } */
-   
-  // aplot(pM, 0,0,0, pM->Nx[0]-1, pM->Nx[1]-1, pM->Nx[2]-1, "tau");
+  MPI_Barrier(MPI_COMM_WORLD);
 
-
-
+  /* { printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);} */
+ 
+  /* plot(pM, "tau"); */
+  /* printf("+++++++++++++++++++++\n"); */
+ 
 
 #ifdef sgHYPRE /**********  SELF-GRAVITY ***********/
-    /* testHYPRE_1(pM, pG); */
+  { /* testHYPRE_1(pM, pG); */
     testHYPRE_ex2(pM, pG);
+
+    testSelfGravFourier(pM, pG);
+
     printf("testHYPRE_ex2(pM, pG); done.. \n");
+
+    int mpi1=1; 
+    while(mpi1 == 1);
+  }
 #endif        /**********  SELF-GRAVITY ***********/
     
 #else /* not parallel */
@@ -2116,7 +3310,7 @@ void Userwork_in_loop (MeshS *pM)
 
 
 
- testSelfGravFourier(pM, pG);
+ 
 
 
 
@@ -2278,14 +3472,9 @@ void Userwork_in_loop (MeshS *pM)
 
 void Userwork_after_loop(MeshS *pM)
 {
-
   int i,j,k,is,ie,js,je,ks,ke,kp,jp,ip;
-
   GridS *pG = pM->Domain[0][0].Grid;
-
-  //DomainS pD = pM->Domain[0][0];
-	
-	
+  //DomainS pD = pM->Domain[0][0];		
   /* is = pG->is; */
   /* ie = pG->ie; */
   /* js = pG->js; */
@@ -2301,14 +3490,16 @@ void Userwork_after_loop(MeshS *pM)
   ke = pM->Nx[2]-1;
 	  
 #ifdef XRAYS
-  /* free some memory */
-  for (kp = ks; kp<=ke; kp++) { //z
-    //  for (jp = js; jp<=je; jp++) { //t
-    for (ip = is; ip<=ie; ip++) { //r
-      free((pG->GridOfRays[kp][ip]).Ray);
+#ifndef save_memory
+    for (kp = ks; kp<=ke; kp++) { //z
+      //  for (jp = js; jp<=je; jp++) { //t
+      for (ip = is; ip<=ie; ip++) { //r
+	free_1d_array((pG->GridOfRays[kp][ip]).Ray);
+      }
     }
-  }
-	  
+
+  free_2d_array(pG->GridOfRays);
+#endif	  
 #endif
 
 #ifdef MPI_PARALLEL
@@ -2733,7 +3924,7 @@ void testRayTracings( MeshS *pM, GridS *pG){
     Real abs_cart_norm, cart_norm[3], cyl_norm[3], xyz_pos[3], rtz_pos[3], xyz_p[3],
       res[1];
     int ijk_cur[3],iter,iter_max, lr, ir=0, i0,j0,k0, i1,j1,k1;
-    short nroot;
+    int nroot;
 
     Real xyz_in[3], radSrcCyl[3], tmp[3], dist, sint, cost;
 
@@ -2874,14 +4065,14 @@ void testRayTracings( MeshS *pM, GridS *pG){
 
 void traceGridCellOnGlobGrid(MeshS *pM,GridS *pG, Real *res, int *ijk_cur, Real *xyz_pos,
 			     Real* rtz_pos, const Real *cart_norm, const Real *cyl_norm,			    
-			     short* nroot ) {
+			     int* nroot ) {
   /* ijk_cur is the 3d index of the current cell */
   /*  xpos is the (x,y,z) exact cart. position, should be located at one of the cell's boundaries; */
   /*  x1x2x3 is the 3d - r,t,z -center coordinates of the cell to which the 
       above boundaries belong */
   // traces a cingle cell; cnorm is in Cart. coordinates;
 
-  short crosPhiConstPlanes =0;
+  int crosPhiConstPlanes =0;
   int change_indx, icur, jcur, kcur;
 
   Real a,b,c, rfc, zfc, d,tfc,sint,cost,
@@ -3042,7 +4233,7 @@ void traceGridCellOnGlobGrid(MeshS *pM,GridS *pG, Real *res, int *ijk_cur, Real 
 //#define DEBUG_traceGridCell
 void traceGridCell(GridS *pG, Real *res, int *ijk_cur, Real *xyz_pos,
 		   Real* rtz_pos, const Real *cart_norm, const Real *cyl_norm,
-		   short* nroot) {
+		   int* nroot) {
   /* ijk_cur is the 3d index of the current cell */
   /*  xpos is the (x,y,z) exact cart. position, should be located at one of the cell's boundaries; */
   /*  x1x2x3 is the 3d - r,t,z -center coordinates of the cell to which the 
@@ -3262,187 +4453,146 @@ void ijkGlobToLoc(const GridS *pG, const int iglob, const int jglob, const int k
 
 #ifdef MPI_PARALLEL
 
- void initGlobComBuffer(const MeshS *pM, const GridS *pG )
+
+
+void initGlobComBuffer(const MeshS *pM, const GridS *pG )
 {
   
   MPI_Status status;
-  MPI_Request request;
+  /* MPI_Request request; */
   
-  int  my_id, ierr,  im, jm, km, size;
+  int  my_id, im, jm, km, size;
   int is,ie,js,je,ks,ke;
-  int ext_id,check_id;
-  int BufBndr1[6];
-
-  static  int **BufBndrSendRecv;
-   
+ 
   MPI_Comm_size(MPI_COMM_WORLD, &NumDomsInGlob);
-  
+ 
    is = pG->is; ie = pG->ie;
    js = pG->js; je = pG->je;
    ks = pG->ks; ke = pG->ke;
     
    MPI_Comm_rank(MPI_COMM_WORLD, &my_id);
 
-   /* printf("NumDomsInGlob, .... my_id, %d %d \n", NumDomsInGlob, my_id ); */
-   
-   if((recv_rq = (MPI_Request*) calloc_1d_array(NumDomsInGlob,sizeof(MPI_Request))) == NULL)
-    ath_error("[problem]: Failed to allocate recv MPI_Request array\n");
-
-   if((send_rq = (MPI_Request*) calloc_1d_array(NumDomsInGlob,sizeof(MPI_Request))) == NULL)
-    ath_error("[problem]: Failed to allocate send MPI_Request array\n");
+ 
+   int send_buf[6];
+   int recv_buf[6], **recv_buf_2d=NULL, **send_buf_2d=NULL;
 
    if((BufBndr = (int**)calloc_2d_array(NumDomsInGlob, 6, sizeof(int) )) == NULL)
       ath_error("[initGlobBuffer]: Failed to allocate BufBndr buffer\n");
 
-    if((BufBndrSendRecv = (int**)calloc_2d_array(NumDomsInGlob, 6, sizeof(int) )) == NULL)
-      ath_error("[initGlobBuffer]: Failed to allocate BufBndrSendRecv buffer\n");
- 
-   
+   if((recv_buf_2d = (int**)calloc_2d_array(NumDomsInGlob, 6, sizeof(int) )) == NULL)
+      ath_error("[initGlobBuffer]: Failed to allocate recv_buf_2d buffer\n");
+
+   if((send_buf_2d = (int**)calloc_2d_array(NumDomsInGlob, 6, sizeof(int) )) == NULL)
+      ath_error("[initGlobBuffer]: Failed to allocate send_buf_2d buffer\n");
+
    MPI_Reduce(&ie, &im, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);   
    MPI_Reduce(&je, &jm, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
    MPI_Reduce(&ke, &km, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
 
-
+   
+ 
    /* calculate index position of the local patch in global mesh   */
    /* is -> BufBndr1[0]..ks -> BufBndr1[2]; ie->BufBndr1[2].. */
 
    /* indices in virtual global buffer */
-   ijkLocToGlob(pG, is, js, ks,  &(BufBndr1[0]), &(BufBndr1[1]), &(BufBndr1[2]));
-   ijkLocToGlob(pG, ie, je, ke,  &(BufBndr1[3]), &(BufBndr1[4]), &(BufBndr1[5]));
+   ijkLocToGlob(pG, is, js, ks,  &(send_buf[0]), &(send_buf[1]), &(send_buf[2]));
+   ijkLocToGlob(pG, ie, je, ke,  &(send_buf[3]), &(send_buf[4]), &(send_buf[5]));
 
-   /* printf(" after ijkLocToGlob BufBndr1:  %d  %d  %d %d  %d  %d  id = %d \n\n", */
-   /* 	  BufBndr1[0], BufBndr1[1], BufBndr1[2], */
-   /* 	  BufBndr1[3], BufBndr1[4], BufBndr1[5], */
-   /* 	  my_id); */
-
-    /* printf(" NumDomsInGlob = %d \n", NumDomsInGlob); */
-        
-       
-   if (my_id == 0) {
-
-     for (int ii = 0; ii<=5; ii++) BufBndr[0][ii] = BufBndr1[ii];
-     
-     /* printf(" im, jm, km =  %d %d %d\n", im, jm, km); */
-       size = im*jm*km;
-       BufSize = size;
-       ibufe = im;
-       jbufe = jm;
-       kbufe =km;
-
-       // receive message from any source
-       for (int i=1; i<NumDomsInGlob; i++){
-
-	 ierr = MPI_Irecv(&(BufBndr1),6,MPI_INT,MPI_ANY_SOURCE,0,MPI_COMM_WORLD,&request);
-
-	 ierr = MPI_Wait(&request,&status);
-
-	 ext_id=status.MPI_SOURCE;
-
-	 /* copy info about other grids to loc buffer */
-	 for (int ii = 0; ii<=5; ii++) BufBndr[ext_id][ii] = BufBndr1[ii];
-
-	   
-	 /* printf(" receiving at 0  BufBndr1: %d  %d  %d %d  %d  %d  id_src = %d \n\n", */
-	 /* 	BufBndr1[0], BufBndr1[1], BufBndr1[2], */
-	 /* 	BufBndr1[3], BufBndr1[4], BufBndr1[5], */
-	 /* 	status.MPI_SOURCE); */
-	 /* printf(" from %d %d  \n", i, NumDomsInGlob); */	       
-
-       } //received from all my_id(s)
-
-
-       /* pack and send full root copy of BufBndr */
-       int *pSnd = (int*) &(BufBndrSendRecv[0]) ;
-
-       for (int i=0; i<NumDomsInGlob; i++){
-	 for(int ii = 0; ii<=5; ii++){	     
-	   *(pSnd++) = BufBndr[i][ii];	
-	     }
-       }
-
-       for (int dest = 1;  dest < NumDomsInGlob; dest++){
-	 ierr = MPI_Isend(&(BufBndrSendRecv[0]), NumDomsInGlob*6, MPI_INT, dest, 0,
-			  MPI_COMM_WORLD, &request);       
-	 /* check non-blocking send has completed. */
-	 ierr = MPI_Wait(&(request), &status);       
-       }
-       
-       /* printf(" Received all BufBndr at my_id = 0 : \n"); */
-
-       /* for (int ii = 0; ii<NumDomsInGlob; ii++){ */
-       /* 	 printf(" id %d \n", ii); */
-       /* 	 printf(" %d  %d  %d %d  %d  %d  \n", */
-       /* 		BufBndr[ii][0], BufBndr[ii][1], BufBndr[ii][2], BufBndr[ii][3], BufBndr[ii][4], BufBndr[ii][5]); */
-       /* } */
-       
-       /* MPI_Barrier(MPI_COMM_WORLD); */
-       
-  
-       /* MPI_Bcast(&(BufBndr[0]), 6 * NumDomsInGlob, MPI_INT, 0, MPI_COMM_WORLD); */
-
-       /* printf(" igs, jgs, kgs,  id, %d  %d  %d %d  %d  %d  %d \n", */
-       /* 	 	BufBndr[ext_id][0], BufBndr[ext_id][1], BufBndr[ext_id][2], */
-       /* 	 	BufBndr[ext_id][3], BufBndr[ext_id][4], BufBndr[ext_id][5], */
-       /* 	 	status.MPI_SOURCE); */
-
-   }
+int mpi1=1;
+//while( mpi1==1 );
    
-   else { /* my_id is not 0 */
+   for(int m = 0; m<= 5; m++) BufBndr[my_id][m] = send_buf[m];
 
-     ext_id = my_id;
-
-     /* printf("sending my_id from %d to 0\n", ext_id); */
-     /* printf(" sending igs, jgs, kgs,  id, %d  %d  %d %d  %d  %d  %d \n", */
-     /* 	 	BufBndr1[0], BufBndr1[1], BufBndr1[2], */
-     /* 	 	BufBndr1[3], BufBndr1[4], BufBndr1[5], */
-     /* 	 	status.MPI_SOURCE); */
-
-     for (int ii = 1; ii<=5; ii++) BufBndr[ext_id][ii] = BufBndr1[ii];
-	  
-     ierr = MPI_Isend(&(BufBndr1), 6, MPI_INT, 0, 0, MPI_COMM_WORLD, &request);          
-     ierr = MPI_Wait(&request, MPI_STATUS_IGNORE);
+   if (my_id == 0) {
+     BufSize =  im*jm*km;
+     ibufe = im;
+     jbufe = jm;
+     kbufe =km;
      
-     int *pRcv = (int*) &(BufBndrSendRecv[0]) ;     
-     /* receiving full copy of BufBndr from root */
-     ierr = MPI_Irecv(&(BufBndrSendRecv[0]), NumDomsInGlob*6, MPI_INT, 0, 0,
-		      MPI_COMM_WORLD,  &request);
-     /* wait on non-blocking receive and unpack data */
-     ierr = MPI_Wait(&request, &status);      
+     for (int id_from =1; id_from < NumDomsInGlob; id_from++){      
+
+       MPI_Recv(&recv_buf, 6, MPI_INT, id_from, 1, MPI_COMM_WORLD, &status);
+       
+       
+       for(int m = 0; m<= 5; m++) BufBndr[id_from][m] = recv_buf[m];       
+
+       /* printf("recv from %d %d %d \n", id_from, status, NumDomsInGlob);      	  */
+     }
+
+ 
+     int *pSnd;
+     //pSnd = (int*)&(send_buf_2d[0]);
+
+     pSnd = (int*)&(send_buf_2d[0][0]);
+
+     
+ 
+     for (int i=0; i<NumDomsInGlob; i++){ //pack the send buffer
+       for(int ii = 0; ii<=5; ii++){	
+	 *(pSnd++) = BufBndr[i][ii];	 
+       }
+     }
+
+     
+      
+     for(int id_to=1; id_to<NumDomsInGlob; id_to++) {//send to all else
+       /* MPI_Send(&(send_buf_2d[0]),  NumDomsInGlob*6, MPI_INT, id_to, 2, */
+       /* 	      MPI_COMM_WORLD); */
+       MPI_Send(&(send_buf_2d[0][0]),  NumDomsInGlob*6, MPI_INT, id_to, 2,
+     	      MPI_COMM_WORLD);       
+     }
+
+  
+     
+   }
+   else{
+     int id_to=0;      
+     MPI_Send(&send_buf[0], 6, MPI_INT, id_to, 1 , MPI_COMM_WORLD);
+
+     int id_from = 0;
+     /* int *pRcv = (int*)&(recv_buf_2d[0]); */
+     int *pRcv = (int*)&(recv_buf_2d[0][0]);
+     
+     /* MPI_Recv(&(recv_buf_2d)[0],  NumDomsInGlob*6, MPI_INT, id_from, 2, */
+     /* 	      MPI_COMM_WORLD, &status); */
+     MPI_Recv(&(recv_buf_2d)[0][0],  NumDomsInGlob*6, MPI_INT, id_from, 2,
+     	      MPI_COMM_WORLD, &status);
 
      for (int i=0; i<NumDomsInGlob; i++){
-	 for(int ii = 0; ii<=5; ii++){	     
-	   BufBndr[i][ii] = *(pRcv++);	
-	     }
-       }
-
-      /* printf(" test  %d  %d %d  %d  %d  %d id = %d \n\n", */
-      /* 	  BufBndr[my_id][0], BufBndr[my_id][1], BufBndr[my_id][2], */
-      /* 	  BufBndr[my_id][3], BufBndr[my_id][4], BufBndr[my_id][5], */
-      /* 	  my_id); */
-
+    	 for(int ii = 0; ii<=5; ii++){
+     	   BufBndr[i][ii] = *(pRcv++);
+	 }
+     }
+     /* printf("recieved from %d %d\n", id_from, status); */
+   }
      
-     
-   } /* my_id split end */
+   
+   MPI_Barrier(MPI_COMM_WORLD);
+   for(int ii=0; ii < NumDomsInGlob; ii++){
+   int ii=my_id;
+   printf(" ijk_s:  %d %d %d, ijk_e: %d %d %d my_id= %d \n\n",
+	  BufBndr[ii][0], BufBndr[ii][1], BufBndr[ii][2],
+	  BufBndr[ii][3], BufBndr[ii][4], BufBndr[ii][5],
+	  ii);
+   }
+    
+   free(recv_buf_2d);
+   free(send_buf_2d);
 
-   /* broadcasting to all about global buffer */
+   //   broadcasting to all about global buffer
    MPI_Bcast(&BufSize, 1, MPI_INT,   0, MPI_COMM_WORLD);
    MPI_Bcast(&ibufe,   1, MPI_INT,   0, MPI_COMM_WORLD);
    MPI_Bcast(&jbufe,   1, MPI_INT,   0, MPI_COMM_WORLD);
    MPI_Bcast(&kbufe,   1, MPI_INT,   0, MPI_COMM_WORLD);
-   /* printf(" ibufe, jbufe, kbufe, BufSize,  id,  %d  %d  %d  %d %d \n\n", ibufe, jbufe, kbufe, */
-   /* 	      BufSize, my_id); */
 
-   /* for(int ii=0; ii < NumDomsInGlob; ii++){ */
-   /* 	 printf(" ig, jg, kg,  id, %d  %d  %d %d  %d  %d my_id= %d \n\n", */
-   /* 	 	BufBndr[ii][0], BufBndr[ii][1], BufBndr[ii][2], */
-   /* 	 	BufBndr[ii][3], BufBndr[ii][4], BufBndr[ii][5], */
-   /* 	 	ii); */
-   /* } */
-
-   AllocateSendRecvGlobBuffers(pM, pG);
+#ifdef use_glob_vars
+   AllocateSendRecvGlobBuffers(pM, pG);        
+#endif
    
    return;
 }
+
+#ifdef use_glob_vars
 
 void AllocateSendRecvGlobBuffers(const MeshS *pM, const GridS *pG )
 {
@@ -3450,6 +4600,10 @@ void AllocateSendRecvGlobBuffers(const MeshS *pM, const GridS *pG )
 
   BufSizeGlobArr = pM->Nx[2]* pM->Nx[1]* pM->Nx[0];
 
+  printf( "BufSizeGlobArr= %d\n", BufSizeGlobArr);
+
+  /* int  mpi1=1; */
+  /* while( mpi1==1 ); */
  
    /* printf( "BufSizeGlobArr = %d %d \n\n " , BufSizeGlobArr, my_id); */
 
@@ -3470,9 +4624,9 @@ void AllocateSendRecvGlobBuffers(const MeshS *pM, const GridS *pG )
    /* printf("   buffer allocation  done at id = %d .... %d \n", my_id, BufSizeGlobArr); */
 
 }
-   
-//#define dbgSyncGridGlob
-void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do)
+
+ 
+void SyncGridGlob(MeshS *pM, GridS *pG, int W2Do)
   /* syncs grid patches to global var */
 {
     
@@ -3518,6 +4672,7 @@ void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do)
      for (k = BufBndr[my_id][2]; k <= BufBndr[my_id][5]; k++) {     
       for (j = BufBndr[my_id][1]; j<=BufBndr[my_id][4]; j++) {
 	for (i =BufBndr[my_id][0]; i<=BufBndr[my_id][3]; i++) {
+
 	  iloc = i + pG->is - pG->Disp[0];
 	  jloc = j + pG->js - pG->Disp[1];
 	  kloc = k + pG->ks - pG->Disp[2];  
@@ -3525,9 +4680,6 @@ void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do)
 	  if (W2Do == ID_DEN){
 	    pG->yglob[k][j][i].ro  = pG->U[kloc][jloc][iloc].d;
 	  }
-
-
-	  
 	  /* pG->yglob.tau by this time must be already calculated by the local func,
 	   so no need to update the root copy*/
 	  	  
@@ -3589,9 +4741,9 @@ void SyncGridGlob(MeshS *pM, DomainS *pDomain, GridS *pG, int W2Do)
   return;
 
 }
+#endif
 
-
-
+#ifdef use_glob_vars
 static void packGridForGlob(MeshS *pM, GridS *pG, int* myid, int W2Do)
 {
   int is = pG->is, ie = pG->ie;
@@ -3712,41 +4864,46 @@ static void unPackGlobBufForGlobSync(MeshS *pM, GridS *pG, int *ext_id, int W2Do
       }
     }
 }
+#endif
 
 void freeGlobArrays()
 { 
   free_1d_array(recv_rq);
   free_1d_array(send_rq);
   free_2d_array(BufBndr);
+
+#ifdef use_glob_vars
   free_1d_array(send_buf);
   free_1d_array(send_buf_big);
   free_1d_array(recv_buf);
-  free_1d_array(recv_buf_big);    
+  free_1d_array(recv_buf_big);
+#endif
+  
 }
 
 #endif
 
 
 /* given x, returns containing cell first index.  */
-int celli_Glob(const MeshS *pM, const Real x, const Real dx1_1, int *i, Real *a, const Real is)
+int celli_Glob(const MeshS *pM, const Real x, const Real dx1_1, int *i, Real *a, const int is)
 {
-  *a = (x -  pM->RootMinX[0]) * dx1_1 + is;
+  *a = (x -  pM->RootMinX[0]) * dx1_1 + (Real)is;
   *i = (int)(*a);
   if (((*a)-(*i)) < 0.5) return 0;	/* in the left half of the cell*/
   else return 1;			/* in the right half of the cell*/
 }
 
-int cellj_Glob(const MeshS *pM, const Real y, const Real dx2_1, int *j, Real *b, const Real js)
+int cellj_Glob(const MeshS *pM, const Real y, const Real dx2_1, int *j, Real *b, const int js)
 {
-  *b = (y - pM->RootMinX[1]) * dx2_1 + js;
+  *b = (y - pM->RootMinX[1]) * dx2_1 + (Real)js;
   *j = (int)(*b);
   if (((*b)-(*j)) < 0.5) return 0;	/* in the left half of the cell*/
   else return 1;			/* in the right half of the cell*/
 }
 
-int cellk_Glob(const MeshS *pM, const Real z, const Real dx3_1, int *k, Real *c, const Real ks)
+int cellk_Glob(const MeshS *pM, const Real z, const Real dx3_1, int *k, Real *c, const int ks)
 {
-  *c = (z - pM->RootMinX[2]) * dx3_1 + ks;
+  *c = (z - pM->RootMinX[2]) * dx3_1 + (Real)ks;
   *k = (int)(*c);
   if (((*c)-(*k)) < 0.5) return 0;	/* in the left half of the cell*/
   else return 1;			/* in the right half of the cell*/
@@ -3891,7 +5048,7 @@ float ellf(float phi, float ak)
 /*       res[1], olpos[3],xyz_cc[3], rtz_cc[3]; */
 /*     int ijk_cur[3],iter,iter_max,lr,ir=0,i0,j0,k0, */
 /*     		NmaxArray=1; */
-/*     short nroot; */
+/*     int nroot; */
 /*     Real xyz_in[3], radSrcCyl[3], dist, sint, cost, s2; */
     
 /* //    CellOnRayData arrayDataTmp; //indices, ijk and dl */
@@ -3900,7 +5057,7 @@ float ellf(float phi, float ak)
 /*     CellOnRayData *tmpCellIndexAndDisArray; */
 /*     Real *tmpRealArray; */
 
-/*     short ncros; */
+/*     int ncros; */
 
 
 /*  int  mpi1=1; */
@@ -4139,4 +5296,244 @@ float ellf(float phi, float ak)
 
 /* //  printf(" optDepthStack \n"); */
 /* //  getchar(); */
+/* } */
+
+
+	/* Side = CheckCrossBlockBdry(i, k, cur_id); */
+	       
+	  /* if(my_id==1) printf("my_id %d, cur_id %d \n", my_id, cur_id); */
+	  
+	  /* tmpRaySegGridPerBlock[ib]  */
+	   
+	    
+	    
+	
+      /* 	If((Side==LS)||(Side==RS)||(Side==DS)||(Side==US)){ */
+      /* 	  switch (InOutBlock){     */
+      /* 	  case (OutBlock): */
+	    
+      /* 	    ii_s = ii;      */
+
+      /* 	    /\* tmpRaySegGridPerBlock[SegId].EnterSide=Side; *\/ */
+	    
+      /* 	    InOutBlock = InBlock; */
+      /* 	    NumOfSegInBlock +=1;	     */
+      /* 	    break; */
+      /* 	  case (InBlock):   */
+      /* 	    ii_e = ii; */
+
+      /* 	    /\* tmpRaySegGridPerBlock[SegId].ExitSide=Side; *\/ */
+	    
+      /* 	    break; */
+      /* 	  default:       */
+      /* 	    ath_error("Error in Constr_SegmentsFromRays"); */
+      /* 	  } */
+      /* 	} */
+      /* 	Side = NotOnSide;	 */
+      /* } /\* ii-ray *\/ */
+      
+      /* if (InOutBlock == InBlock){ */
+      /* 	tmpRaySegGridPerBlock.id[0]=ig; */
+      /* 	tmpRaySegGridPerBlock.id[1]=kg;	   */
+      /* } */
+
+
+/* void testSegments2_dump(GridS *pG, int my_id, int TestType){ */
+
+/*   int ig_s = BufBndr[my_id][0]; */
+/*   int ig_e = BufBndr[my_id][3]; */
+/*   int kg_s = BufBndr[my_id][2]; */
+/*   int kg_e = BufBndr[my_id][5]; */
+
+
+/*   int js =  BufBndr[my_id][1];     */
+/*   int je = BufBndr[my_id][4] ; */
+/*   int phi_sz = je-js+1; */
+  
+/*    int mpi1=1; */
+/*    while(mpi1==1); */
+
+  
+  
+  
+/*   int dlen; */
+/*   /\* int l = pG->BlockToRaySegMask[kp][ip]; *\/ */
+      
+/*   switch (TestType){ */
+/*   case 1:    */
+/*     //printf("id: %d, (l,%d), %d, %d, \n", my_id, l, kp, ip); */
+/*     break; */
+/*   case 2: */
+   
+/*       /\* calc test data on all segs/Block for testing*\/ */
+/*     { */
+/*     Real dat=0; */
+
+/*       for(int l=0; l <= NumSegBlock_glb-1; l++){ */
+
+/* 	/\* if(( pG->RaySegGridPerBlock[l].dat_vec_1d= *\/ */
+/*       	/\*   (float*)calloc_1d_array(phi_sz,sizeof(float)))==NULL) *\/ */
+/*       	/\* ath_error("[calloc_1d] failed to allocate (pG->RaySegGridPerBlock)[l].d_tau \n"); *\/ */
+
+/* 	/\* if ( (pG->RaySegGridPerBlock)[l].dat_vec_1d_size>0){ *\/ */
+/* 	/\*   for(int m=0; m <= (pG->RaySegGridPerBlock)[l].data_len-1; m++){      *\/ */
+/* 	/\*     dat += (pG->RaySegGridPerBlock)[l].data[m].dl;	   *\/ */
+/* 	/\*   } *\/ */
+/* 	/\* } *\/ */
+
+/* 	//	printf("here  %d %d %d \n", my_id, l, pG->RaySegGridPerBlock[l].dat_vec_1d_size); */
+
+/* 	if ( (pG->RaySegGridPerBlock)[l].dat_vec_1d_size>0){ */
+	  
+/* 	  for (int j = js; j<= phi_sz-1; j++) { */
+
+/* 	    //  pG->RaySegGridPerBlock[l].dat_vec_1d[j] = dat; */
+
+/* 	  } */
+/* 	} */
+
+	
+/*       } */
+
+
+/*       //1) */
+/*       if( (send_1d_buf = (float*)calloc_1d_array(phi_sz, sizeof(float)))==NULL) */
+/*         ath_error("[calloc_1d] failed to allocate send_1d_buf \n"); */
+
+/*       if( (recv_1d_buf = (float*)calloc_1d_array(phi_sz, sizeof(float)))==NULL) */
+/*         ath_error("[calloc_1d] failed to allocate send_1d_buf \n"); */
+
+     
+/*     } */
+	
+/*     {//create MPI datatype */
+            
+/*       const int nitems=3; */
+/*       int blocklengths[3] = {1,1,1};	   */
+/*       MPI_Datatype types[3] = {MPI_INT, MPI_INT, MPI_FLOAT}; */
+/*       MPI_Datatype mpi_seg_data;	  */
+/*       MPI_Aint offsets[3]; */
+
+/*       offsets[0] = offsetof(SegHeadId, i); */
+/*       offsets[1] = offsetof(SegHeadId, k); */
+/*       offsets[2] = offsetof(SegHeadId, dat);	   */
+
+/*       MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_seg_data); */
+/*       MPI_Type_commit(&mpi_seg_data); */
+		
+/*       SegHeadId SegSendBuf, SegRecvBuf; */
+	  
+/*       const int tag = 13, tag1d=11; */
+
+/*       /\* for (int l=0; l <= NumSegBlock_glb - 1; l++){	 *\/ */
+
+/* 	int dest_id = pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[0];	 */
+
+/* 	int i_loc, k_loc, l_loc; */
+  
+/* 	if (my_id != dest_id){ */
+
+/* 	  SegSendBuf.i = pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[1]; */
+/* 	  SegSendBuf.k = pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[2];	   */
+/* 	  SegSendBuf.dat = pG->RaySegGridPerBlock[l].dTau; */
+/* 	  if(pG->RaySegGridPerBlock[l].type == Head) ath_error("error in testSegments2");	     */
+/* 	  MPI_Send(&SegSendBuf, 1, mpi_seg_data, dest_id, tag, MPI_COMM_WORLD); */
+
+/* 	  /\* send the phi-dependent data *\/	   */
+/* 	  /\* MPI_Send(&pG->RaySegGridPerBlock[l].dat_vec_1d[0], *\/ */
+/* 	  /\* 	   phi_sz, MPI_DOUBLE, dest_id, tag1d, MPI_COMM_WORLD); *\/ */
+
+
+/* 	  if (pG->RaySegGridPerBlock[l].type == Upstr){ */
+
+/* 	    for(int m = 0; m <= phi_sz-1; m++) */
+/* 	      send_1d_buf[m] = pG->RaySegGridPerBlock[l].dat_vec_1d[m];	   */
+
+/* 	    printf(" --- sending %d %d %d \n", my_id, phi_sz, dest_id);	   */
+
+/* 	    MPI_Send(&send_1d_buf[0], phi_sz, MPI_FLOAT, dest_id, tag1d, MPI_COMM_WORLD); */
+
+/* 	  } */
+/* 	}   */
+	  
+
+/* 	if (my_id == dest_id){ */
+	    
+/* 	  MPI_Status status; */
+/* 	  /\* we dont need id of my_id, i.e. relevant size = real_size-2 *\/	     */
+/* 	  int con_arr_sz =  (pG->RaySegGridPerBlock)[l].MPI_idConnectArray_size; */
+	    
+/* 	  for(int impi=0; impi <= con_arr_sz-2; impi++){ */
+/* 	    /\* iterate over upstream segments, current elem not included *\/ */
+
+/* 	    int orig_id = pG->RaySegGridPerBlock[l].MPI_idConnectArray[impi]; */
+/* 	    //printf("MPI connect, my_id=%d, mpi_indx=%d \n", my_id,mpi_indx); */
+
+/* 	    /\* check if there is smth to receive *\/ */
+/* 	    MPI_Recv(&SegRecvBuf, 1, mpi_seg_data, orig_id, tag, MPI_COMM_WORLD, &status);	       */
+
+/* 	    /\* printf("from:%d to:%d, %d, %d %f \n", orig_id, dest_id, SegRecvBuf.i, *\/ */
+/* 	    /\* 	     SegRecvBuf.k, SegRecvBuf.dat); *\/ */
+/* 	    k_loc=SegRecvBuf.k; */
+/* 	    i_loc=SegRecvBuf.i;	       */
+/* 	    l_loc=pG->BlockToRaySegMask[k_loc][i_loc]; */
+/* 	    /\* printf("id = %d, lloc= %d \n", my_id, l_loc); *\/		 */
+/* 	    pG->RaySegGridPerBlock[l_loc].dTau += SegRecvBuf.dat; */
+	   
+	  
+
+/* 	    MPI_Recv(&recv_1d_buf, phi_sz, MPI_FLOAT, orig_id, tag1d, */
+/* 	    	     MPI_COMM_WORLD, &status); */
+
+/* 	      /\* } *\/ */
+	     
+/* 	    /\* printf(" ++++  recv %d %d %d\n", my_id, phi_sz, orig_id); *\/	     */
+/* 	    /\* receive the segment angle dependent data *\/ */
+
+/* 	    //if ( (pG->RaySegGridPerBlock)[l].dat_vec_1d_size>0){ */
+
+/* 	    if (con_arr_sz >1 ){ /\* avoid blocks closest to the source *\/ */
+
+/* 	      //for(int m = 0; m <= phi_sz-1; m++) { */
+
+/* 	      pG->RaySegGridPerBlock[l_loc].dat_vec_1d[0] =1.; */
+	      
+/*   //		pG->RaySegGridPerBlock[l_loc].dat_vec_1d[m] = recv_1d_buf[m]; */
+	      
+/* 		//} */
+/* 	    } */
+	  
+	    
+/* 	  } */
+	    
+/* 	  if (con_arr_sz <= 1){//closest to source	       */
+/* 	    i_loc=pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[1]; */
+/* 	    k_loc=pG->RaySegGridPerBlock[l].mpi_id_ik_head_block[2]; */
+/* 	    l_loc=pG->BlockToRaySegMask[k_loc][i_loc]; */
+	       
+/* 	  } */
+
+	    
+/* 	  /\* calc the same along the Ray *\/ */
+/* 	  Real s=0; */
+/* 	  int len=(pG->GridOfRays[k_loc][i_loc]).len; */
+
+/* 	  for (int ii = 0; ii<len; ii++){ */
+/* 	    s += (pG->GridOfRays[k_loc][i_loc]).Ray[ii].dl; */
+/* 	    //	      	printf("%d, %f \n", ii, s); */
+/* 	  } */
+
+/* 	  printf("id:%d, s=%f, dat=%f \n",my_id, s, pG->RaySegGridPerBlock[l_loc].dTau); */
+	    	    
+/* 	} /\* my_id == dest_id *\/ */
+	  	  
+/*       }	  	 */
+/*     }/\* end seg-loop *\/ */
+
+/*     break; */
+	
+/*   default: */
+/*     printf("%d \n", TestType); */
+/*     ath_error("unknown case in testSegments2"); */
+/*   } // switch           */
 /* } */
