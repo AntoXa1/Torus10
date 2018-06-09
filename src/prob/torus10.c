@@ -351,10 +351,7 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
   CellOnRayData *tmpCellIndexAndDisArray;
   Real *tmpRealArray;
   int ncros;
-  int  mpi1=1;
-
-  
- 
+  int  mpi1=1; 
   
   is = 0;
   ie = pM->Nx[0]-1;
@@ -539,6 +536,8 @@ void Constr_RayCastingOnGlobGrid(MeshS *pM, GridS *pG, int my_id){
       /* printf("%d %d %d \n", NmaxArray, ip, jp); */
       /* { printf("MPI breakpoint2, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}	      */
 
+
+      
       (pG->GridOfRays[kp][ip]).Ray =
 	(CellOnRayData*)calloc_1d_array(NmaxArray,sizeof(CellOnRayData));
       
@@ -3116,15 +3115,11 @@ void problem_read_restart(MeshS *pM,  GridS *pG)
 /* void problem_read_restart(GridS *pG, DomainS *pD, FILE *fp) */
 {
 
-  /* DomainS *pD = (DomainS*)&(pM->Domain[0][0]); */
+  DomainS *pDomain = (DomainS*)&(pM->Domain[0][0]);
   /* GridS *pG = pD->Grid; */
 
   if (pG->GridOfRays == NULL) ath_error("pG->GridOfRays != NULL, error on restart");
 
-  /*  (pG->GridOfRays[0][0]).Ray = */
-  /*   	(CellOnRayData*)calloc_1d_array(1,sizeof(CellOnRayData));  */
-
-  /* { printf("MPI breakpoint2, id=%d \n", -20); int mpi1= 1;  while(mpi1 == 1);} */
   
   /* (pG->GridOfRays[0][0]).Ray = */
 
@@ -3160,29 +3155,34 @@ void problem_read_restart(MeshS *pM,  GridS *pG)
 
   if(MPI_SUCCESS != MPI_Comm_rank(MPI_COMM_WORLD, &my_id))
     ath_error("[main]: Error on calling MPI_Comm_rank in torus9.c\n");
-   
+
+#ifdef XRAYS
+  CoolingFunc = updateEnergyFromXrayHeatCool; 
+#endif
+#ifdef CAK_FORCE
+  RadiationPresLines = CAK_RadPresLines;
+#endif
+
   StaticGravPot = grav_pot;
   x1GravAcc = grav_acc;
 
-  calcProblemParameters();
+  calcProblemParameters();  
   printProblemParameters();
+  
+  bvals_mhd_fun(pDomain, left_x1,  inX1BoundCond );  
+  bvals_mhd_fun(pDomain, left_x3,  diode_outflow_ix3 );
+  bvals_mhd_fun(pDomain, right_x3, diode_outflow_ox3);
 
-  bvals_mhd_fun(pG, left_x1,  inX1BoundCond );
-  bvals_mhd_fun(pG, left_x3,  diode_outflow_ix3 );
-  bvals_mhd_fun(pG, right_x3, diode_outflow_ox3);
-
+  
   MPI_Barrier(MPI_COMM_WORLD);
 
   /* pG->GridOfRays = (RayData**)calloc_2d_array(pM->Nx[2], pM->Nx[0], sizeof(RayData)); */
-  //if (pG->GridOfRays == NULL) goto on_error_xrays_GridOfRays;
-  
-  
-
+  //if (pG->GridOfRays == NULL) goto on_error_xrays_GridOfRays;      
   
   /* 1) */
   Constr_RayCastingOnGlobGrid(pM, pG, my_id); //mainly calc. GridOfRays
 
-
+ 
   
   
   /* 2) */
@@ -3190,24 +3190,33 @@ void problem_read_restart(MeshS *pM,  GridS *pG)
   /* 3) */
   MPI_Barrier(MPI_COMM_WORLD);
   /* 4) */
-  
+
 #ifdef use_glob_vars
   SyncGridGlob(pM, pG, ID_DEN);
   MPI_Barrier(MPI_COMM_WORLD);
 #endif
   my_id_glob=my_id;
+
   Constr_SegmentsFromRays(pM, pG, my_id);    
+
+
   MPI_Barrier(MPI_COMM_WORLD);
 
   /* { printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);}   */
- 
+
     
   OptDepthAllSegBlock(pG); // tau on a local mpi block
+
+
   testSegments2(pM, pG, my_id, 2);    //MPI sync tau segments
   MPI_Barrier(MPI_COMM_WORLD);
+
+
   ionizParam(pM, pG);
   MPI_Barrier(MPI_COMM_WORLD);
-   
+
+    /* { printf("MPI breakpoint2, id=%d \n", -20); int mpi1= 1;  while(mpi1 == 1);}  */
+  
   return;
 }
 
@@ -3237,8 +3246,7 @@ void Userwork_in_loop (MeshS *pM)
 
   //A.D.
 
-
-
+  //  { printf("MPI breakpoint2, id=%d \n", -20); int mpi1= 1;  while(mpi1 == 1);}
     
   GridS *pG=pM->Domain[0][0].Grid;
 
@@ -3278,6 +3286,7 @@ void Userwork_in_loop (MeshS *pM)
   
   /* optDepthStackOnGlobGrid(pM, pG, my_id);   */
   /* SyncGridGlob(pM, pG, ID_TAU);   */
+ 
    
   OptDepthAllSegBlock(pG); // tau on a local mpi block
   testSegments2(pM, pG, my_id, 2);    //MPI sync tau segments
@@ -3285,6 +3294,7 @@ void Userwork_in_loop (MeshS *pM)
   ionizParam(pM, pG);
 
   MPI_Barrier(MPI_COMM_WORLD);
+
 
   /* { printf("MPI breakpoint, id=%d \n", my_id); int mpi1= 1;  while(mpi1 == 1);} */
  

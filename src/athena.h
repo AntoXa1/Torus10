@@ -667,7 +667,6 @@ typedef Real (*ShearFun_t)(const Real x1);
 /*! \fn Real (*CoolingFun_t)(const Real d, const Real p, const Real dt);
  *  \brief Cooling function. */
 
-void problem_read_restart(MeshS *pM,  GridS *pG);
 
 #ifdef XRAYS
 typedef Real (*CoolingFun_t)(const Real E, const Real d,

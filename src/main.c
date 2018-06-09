@@ -398,7 +398,8 @@ int main(int argc, char *argv[])
       }
     }
   }
-
+ 
+  
 /* restrict initial solution so grid hierarchy is consistent */
 #ifdef STATIC_MESH_REFINEMENT
   SMR_init(&Mesh);
@@ -534,17 +535,22 @@ int main(int argc, char *argv[])
  * Done first since CFL constraint is applied which may change dt  */
 
 #if defined(RESISTIVITY) || defined(VISCOSITY) || defined(THERMAL_CONDUCTION)
+
 #ifdef STS
     ath_pout(0,"Next N_STS = %d\n", N_STS);
     for (i=0; i<N_STS; i++) {
       STS_dt = Mesh.diff_dt/(1.0+nu_STS-(1.0-nu_STS)
                *cos(0.5*PI*(2.0*i+1.0)/(Real)(N_STS)));
 #endif
+
+ 
       integrate_diff(&Mesh);
 
+      
 #ifdef STATIC_MESH_REFINEMENT
       RestrictCorrect(&Mesh);
 #endif
+
       for (nl=0; nl<(Mesh.NLevels); nl++){ 
         for (nd=0; nd<(Mesh.DomainsPerLevel[nl]); nd++){  
           if (Mesh.Domain[nl][nd].Grid != NULL){
@@ -562,6 +568,7 @@ int main(int argc, char *argv[])
 #endif
 #endif /* Explicit diffusion */
 
+    
 /*--- Step 9c. ---------------------------------------------------------------*/
 /* Loop over all Domains and call Integrator */
 
@@ -569,7 +576,7 @@ int main(int argc, char *argv[])
       for (nd=0; nd<(Mesh.DomainsPerLevel[nl]); nd++){  
 
     	  if (Mesh.Domain[nl][nd].Grid != NULL){
-
+	    
         	(*Integrate)(&(Mesh.Domain[nl][nd]));
 
 #ifdef FARGO
@@ -582,6 +589,8 @@ int main(int argc, char *argv[])
       }
     }
 
+    //{ printf("MPI breakpoint2, id=%d \n", -20); int mpi1= 1;  while(mpi1 == 1);}
+    
 /*--- Step 9d. ---------------------------------------------------------------*/
 /* With SMR, restrict solution from Child --> Parent grids  */
 
@@ -591,7 +600,8 @@ int main(int argc, char *argv[])
 
 /*--- Step 9e. ---------------------------------------------------------------*/
 /* User work (defined in problem()) */
-
+    
+    
     Userwork_in_loop(&Mesh);
         
 /*--- Step 9f. ---------------------------------------------------------------*/

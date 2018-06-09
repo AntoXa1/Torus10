@@ -13,7 +13,7 @@
 /bin/id[0-9]
 /bin/*put
 bin/athena
-
+src/defs.h
 
 **/Makeoptions
 **/Makefile
