@@ -44,8 +44,8 @@ bc_ix3          = 2            # inner-K (Z) boundary flag
 bc_ox3          = 2            # outer-K (Z) boundary flag #<parallel>
 					
 NGrid_x1 = 2
-NGrid_x2 = 1
-NGrid_x3 = 1
+NGrid_x2 = 2
+NGrid_x3 = 2
 
 <problem>
 F2Fedd = 0.2 #L/Ledd
