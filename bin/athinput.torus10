@@ -1,4 +1,3 @@
-
 <comment>
 
 <job>
@@ -10,6 +9,7 @@ maxout          = 2	                   # Output blocks number from 1 -> maxout
 out_fmt = vtk               # vtk data dump
 out     = prim              # variables to be dumped
 dt      = 0.1
+time    = 1.0
 
 <output2>
 out_fmt = rst            # Restart dump
@@ -18,7 +18,8 @@ dt      = 0.1            # time increment between outputs
 <time>
 cour_no         = 0.40         # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim            = 10000000     # cycle limit
-tlim            = 2        # time limit
+tlim            = 1000        # time limit
+
 
 <domain1>
 level           = 0            # refinement level this Domain (root=0)	
@@ -28,6 +29,7 @@ x1min           = 0.1          # minimum value of X1 (radial coord)
 x1max           = 5.           # maximum value of X1 (radial coord)
 bc_ix1          = 2            # inner-I (R) boundary flag
 bc_ox1          = 2    	       # outer-I (R) boundary flag
+
 
 Nx2             = 8        # Number of zones in X2-direction
 x2min           = -1.57079633     # minimum value of X2 (theta coord; radians)
@@ -46,7 +48,7 @@ NGrid_x2 = 1
 NGrid_x3 = 1
 
 <problem>
-F2Fedd = 0.1 #L/Ledd
+F2Fedd = 0.2 #L/Ledd
 fx =0.5
 fuv =0.5
 nc0 = 1.0e8             #NUMBER DENSITY @  maximum
