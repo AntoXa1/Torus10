@@ -23,6 +23,8 @@
 #include "reconstruction/prototypes.h"
 #include "rsolvers/prototypes.h"
 
+#include "agravity/aprototypes.h"
+
 /*----------------------------------------------------------------------------*/
 /* main.c */
 int athena_main(int argc, char *argv[]);
@@ -217,7 +219,12 @@ void par_dist_mpi(const int mytid, MPI_Comm comm);
 void problem(MeshS *pM, DomainS *pD);
 void Userwork_in_loop(MeshS *pM);
 void Userwork_after_loop(MeshS *pM);
-void problem_read_restart(MeshS *pM, FILE *fp);
+
+/* void problem_read_restart(MeshS *pM, FILE *fp); */
+void problem_read_restart(MeshS *pM,  GridS *pG);
+
+void problem(MeshS *pM, DomainS *pD); //AVD
+
 void problem_write_restart(MeshS *pM, FILE *fp);
 ConsFun_t get_usr_expr(const char *expr);
 VOutFun_t get_usr_out_fun(const char *name);

@@ -17,7 +17,10 @@
 
 #include "stdio.h"
 #include "mpi.h"
+
 /* #include "malloc.h" */
+#include <stdlib.h> //here is the malloc.h
+>>>>>>> torus10_memory_fix2
 
 #include "pack_3d.h"
 #include "remap_3d.h"

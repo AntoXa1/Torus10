@@ -1,6 +1,7 @@
 # Prerequisites
-s
+
 # Object files
+
 **/*.o
 **/*.obj
 */.*
@@ -13,6 +14,7 @@ s
 /bin/id[0-9]
 /bin/*put
 bin/athena
+src/defs.h
 
 
 **/Makeoptions

@@ -676,7 +676,7 @@ void integrate_3d_vl(DomainS *pD)
 	  //coolf=0;
 
 #ifdef XCOOLING
-	  
+
 	  coolf = (*CoolingFunc)(Uhalf[k][j][i].E, Uhalf[k][j][i].d,
 				 Uhalf[k][j][i].M1, Uhalf[k][j][i].M2, Uhalf[k][j][i].M3,
 				 Uhalf[k][j][i].B1c, Uhalf[k][j][i].B2c, Uhalf[k][j][i].B3c,
@@ -685,7 +685,7 @@ void integrate_3d_vl(DomainS *pD)
 	  Uhalf[k][j][i].E -= hdt*coolf;
 #endif
 
-
+	  
 	  
 #endif
 
@@ -1494,6 +1494,7 @@ void integrate_3d_vl(DomainS *pD)
 
 #ifdef XRAYS
 
+	  
 	 	           
 #ifdef XCOOLING
 	  coolf = (*CoolingFunc)(pG->U[k][j][i].E, pG->U[k][j][i].d,
@@ -1501,6 +1502,7 @@ void integrate_3d_vl(DomainS *pD)
 				 pG->U[k][j][i].B1c, pG->U[k][j][i].B2c, pG->U[k][j][i].B3c,
 				 pG->tau_e[k][j][i], hdt, i, j, k );	  
 	  pG->U[k][j][i].E  -= pG->dt *coolf;
+	  
 
 #endif	  
 	  

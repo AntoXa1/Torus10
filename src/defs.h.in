@@ -27,6 +27,8 @@
 
 /* radiation or not :: Anton */
 #define XRAYS
+// #define sgHYPRE //use of self-grav solver
+
 
 /* HYDRO or MHD */
 #define @GAS@

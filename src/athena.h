@@ -22,7 +22,13 @@
 // Anton: keys for the adaptive use of the cooling/heating implicit solver
 #define KEY_P 1
 #define KEY_E 2
+
+#define save_memory
+//#define use_glob_vars 
+
 /*============================================================================*/
+
+
 
 
 #ifdef MPI_PARALLEL
@@ -272,39 +278,111 @@ typedef struct GridOvrlp_s{
 ///* possibly safely remove this const int nglob1 = 20, nglob2=20, nglob3=20; */
 
 
-#define mfix1
+//#define mfix1
 
 typedef struct CellIndexAndCoords{
-//	cell data, used in ...
+	/* cell data, used in Constr_RayCastingOnGlobGrid */
 	int i, j, k; //current index
 	float x123[3]; //coordinates
 }CellIndexAndCoords;
 
 typedef struct CellOnRayData{
-//	cell data along the trajectory
-  //current index of cell along the ray, phi index is the same
-
-                    //if the source is symmetrical
-  short i,j,k;
-  
-  
-  float dl; //length element
-  
+  /*! cell data along the trajectory */
+  /*!  current index of cell along the ray, phi index is the same */
+  /*! if the source is symmetrical */
+  int i,j,k;    
+  float dl; //length element  
 }CellOnRayData;
 
 typedef struct RayData{
-//	data along the trajectory
-	short len;
+//!	data along the trajectory
+        int len;  //! index length
 	CellOnRayData  *Ray;
 }RayData;
 
-int yglob_sz[3];
 
-typedef struct LocDatStructForRay{
+int yglob_sz[3]; /* stores the size of the glob array in init_grid.c */
+
+
+typedef struct LocDatStructForRay{ 
   /* Array on global mesh updated on a local node */
+
+#ifdef save_memory
   float ro;
   float tau;
+#endif
+  
 }LocDatStructForRay;
+
+/* ---------------- new course ------------- */
+
+typedef struct RaySegmCellData{
+	/* cell data, used in Constr_RayCastingOnGlobGrid */
+	int i, k; //current index
+	/* float x123[2]; //coordinates */
+}RaySegmCellData;
+
+enum BCBufId{LS, RS, DS, US, NotOnSide}; /* ids of left-,right, down- upper-sides */
+
+enum SegmentType {Upstr=0, Head=1}SegmentType;
+
+typedef struct SegmentData{
+ /*! cell data along the trajectory */
+  /*!  current index of cell along the ray, phi index is the same */
+  /*! if the source is symmetrical */
+  int i,k;    
+  float dl; //length element    
+}SegmentData;
+
+
+
+/* MPI datatype to transfer segment data */
+
+typedef struct SegmSendRecv{
+  int id_ijk[4];
+  float *dat_vec;
+}SegmSendRecv;
+
+
+typedef struct RaySegment{ //meridional segment data
+  //	data along the trajectory
+  int data_len; //length of data/segment
+  SegmentData *data;
+  int dat_vec_1d_size;
+  /* actual size + 3-ijk of destination for simpler MPI communication; 
+     dat_vec_1d_si, ze[0]-i_head; [1]-k_head; [2] -j(phi) */
+                         
+  float *dat_vec_1d;  //dtau vector  over the entire segment, j_phi */
+  Real dTau; 
+  
+  int head_block[4];  /*! id of the ray ==
+       /*[0]-mpi_id_head; [1]-i_head; [2] -j(phi) [3]-k_head;  which is the */
+  
+  /* same for all segments which belong to the same ray if point source */
+  /* 		     id+destination cell indices on global 2D-{R,Z}+j(phi) index grid *\/ */
+  int * MPI_idConnectArray; /*! array of mpi ids of blocks upstream of the head block; 
+		       for head block */
+  /*! MPI_idVect is empty; why: to sum dlt_tau for the head segment */
+  int MPI_idConnectArray_size;
+  enum SegmentType type; //head or not;
+  int n_msg_r; //number of recieved messages
+}RaySegment;
+
+
+/* typedef struct RaySegment3D{ */
+/*   short j_phi;  */
+/*   Real dTau;  //dtau over the entire segment */
+/* }RaySegment3D; */
+
+
+typedef struct RaySegmentBuffer{
+  /* for syncing ray segments between MPI grids */
+  int *ray_id; // array of id of rays piercing current boundary
+  int data_size; 
+  float * data; // data to be transfered
+}RaySegmentBuffer;
+
+RaySegmentBuffer BCRayBuffer[4];
 
 #endif //XRAYS
 
@@ -386,9 +464,19 @@ typedef struct Grid_s{
   //a  Real ***disp; //displacement
 
 
+#ifdef use_glob_vars 
   LocDatStructForRay ***yglob; //density on the global mesh
+#endif
+
   RayData **GridOfRays; //geometrical information in {R,z}
 
+  RaySegment *RaySegGridPerBlock;
+
+  int** RaySegToBlockMask; // i,k coordinates of cells on MPI block->1d array of segments
+  int** BlockToRaySegMask; //reverse
+  
+  //  GridOFRaysOnGrid **RaysOnGrid;
+  //geometrical information in {R,z} on a local Grid/one per MPI process
   
   
 #endif // XRAYS
@@ -578,6 +666,7 @@ typedef Real (*ShearFun_t)(const Real x1);
 
 /*! \fn Real (*CoolingFun_t)(const Real d, const Real p, const Real dt);
  *  \brief Cooling function. */
+
 
 #ifdef XRAYS
 typedef Real (*CoolingFun_t)(const Real E, const Real d,
